@@ -1,11 +1,11 @@
-import { MessageModel } from "../models/message.js";
-import type { ChatMessage, ConversationStore } from "./chat-service.js";
+import type { ChatMessage, ConversationServiceInterface } from "./interfaces/conversation-service.interface.js";
+import type { MessageRepositoryInterface } from "../repositories/interfaces/message-repository.interface.js";
 
-export class ConversationService implements ConversationStore {
+export class ConversationService implements ConversationServiceInterface {
+  constructor(private readonly messageRepository: MessageRepositoryInterface) {}
+
   async getHistory(customerId: string): Promise<ChatMessage[]> {
-    const messages = await MessageModel.find({ customerId })
-      .sort({ createdAt: 1 })
-      .lean();
+    const messages = await this.messageRepository.findByCustomerId(customerId);
 
     return messages.map((message) => ({
       role: message.role,
@@ -14,7 +14,7 @@ export class ConversationService implements ConversationStore {
   }
 
   async appendMessage(customerId: string, message: ChatMessage): Promise<void> {
-    await MessageModel.create({
+    await this.messageRepository.create({
       customerId,
       role: message.role,
       content: message.content,

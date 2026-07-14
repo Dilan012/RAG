@@ -1,20 +1,12 @@
 import type { BaseMessageLike } from "@langchain/core/messages";
 import { ModelProvider, type SupportedModelName } from "./model-provider.js";
+import type { ChatServiceInterface } from "./interfaces/chat-service.interface.js";
+import type { ConversationServiceInterface } from "./interfaces/conversation-service.interface.js";
 
-export interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
-export interface ConversationStore {
-  getHistory(customerId: string): Promise<ChatMessage[]>;
-  appendMessage(customerId: string, message: ChatMessage): Promise<void>;
-}
-
-export class ChatService {
+export class ChatService implements ChatServiceInterface {
   constructor(
     private readonly modelName: SupportedModelName,
-    private readonly conversationStore: ConversationStore
+    private readonly conversationStore: ConversationServiceInterface
   ) {}
 
   async chat(
