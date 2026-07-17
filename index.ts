@@ -3,6 +3,7 @@ dotenv.config();
 
 import express from "express";
 import type { Request, Response } from "express";
+import cors from "cors";
 import { connectToDatabase } from "./src/services/db.js";
 import { configureContainer, container } from "./src/di/container.js";
 import { ChatService } from "./src/services/chat-service.js";
@@ -14,6 +15,7 @@ const PORT = process.env.PORT ?? 3000;
 configureContainer();
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 const chatService = container.resolve(ChatService);

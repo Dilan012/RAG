@@ -15,6 +15,5 @@ const userSchema = new Schema<UserDocument>({
   createdAt: { type: Date, default: Date.now },
 });
 
-console.log("User schema defined:", userSchema);
 
 export const UserModel = model<UserDocument>("User", userSchema);
