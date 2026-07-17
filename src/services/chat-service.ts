@@ -1,12 +1,15 @@
 import type { BaseMessageLike } from "@langchain/core/messages";
+import { inject, injectable } from "tsyringe";
 import { ModelProvider, type SupportedModelName } from "./model-provider.js";
 import type { ChatServiceInterface } from "./interfaces/chat-service.interface.js";
 import type { ConversationServiceInterface } from "./interfaces/conversation-service.interface.js";
+import { TOKENS } from "../di/tokens.js";
 
+@injectable()
 export class ChatService implements ChatServiceInterface {
   constructor(
-    private readonly modelName: SupportedModelName,
-    private readonly conversationStore: ConversationServiceInterface
+    @inject(TOKENS.ModelName) private readonly modelName: SupportedModelName,
+    @inject(TOKENS.ConversationService) private readonly conversationStore: ConversationServiceInterface
   ) {}
 
   async chat(

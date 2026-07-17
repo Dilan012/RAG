@@ -1,6 +1,8 @@
+import { injectable } from "tsyringe";
 import { MessageModel, type MessageDocument } from "../models/message.js";
 import type { MessageRepositoryInterface } from "./interfaces/message-repository.interface.js";
 
+@injectable()
 export class MessageRepository implements MessageRepositoryInterface {
   async findByCustomerId(customerId: string): Promise<MessageDocument[]> {
     return MessageModel.find({ customerId }).sort({ createdAt: 1 }).lean();

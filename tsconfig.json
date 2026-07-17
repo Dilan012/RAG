@@ -32,6 +32,10 @@
     // "noFallthroughCasesInSwitch": true,
     // "noPropertyAccessFromIndexSignature": true,
 
+    // Dependency Injection (tsyringe)
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
     // Recommended Options
     "strict": true,
     "jsx": "react-jsx",
