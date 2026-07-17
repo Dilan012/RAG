@@ -9,6 +9,8 @@ import { configureContainer, container } from "./src/di/container.js";
 import { ChatService } from "./src/services/chat-service.js";
 import { AuthController } from "./src/controllers/auth-controller.js";
 import { createAuthRouter } from "./src/routes/auth-routes.js";
+import { errorHandler } from "./src/middleware/error-handler.js";
+import { ValidationError } from "./src/errors/index.js";
 
 const PORT = process.env.PORT ?? 3000;
 
@@ -26,17 +28,14 @@ app.post("/chat", async (req: Request, res: Response) => {
   const { customerId, message } = req.body ?? {};
 
   if (typeof customerId !== "string" || typeof message !== "string") {
-    return res.status(400).json({ error: "customerId and message are required strings" });
+    throw new ValidationError("customerId and message are required strings");
   }
 
-  try {
-    const reply = await chatService.chat(customerId, message);
-    res.json({ reply });
-  } catch (error) {
-    console.error("Error handling /chat:", error);
-    res.status(500).json({ error: "Failed to generate a response" });
-  }
+  const reply = await chatService.chat(customerId, message);
+  res.json({ reply });
 });
+
+app.use(errorHandler);
 
 async function start() {
   await connectToDatabase();

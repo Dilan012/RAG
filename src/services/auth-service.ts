@@ -4,6 +4,7 @@ import { inject, injectable } from "tsyringe";
 import type { UserRepositoryInterface } from "../repositories/interfaces/user-repository.interface.js";
 import type { AuthResult, AuthServiceInterface } from "./interfaces/auth-service.interface.js";
 import { TOKENS } from "../di/tokens.js";
+import { EmailAlreadyExistsError, InvalidCredentialsError } from "../errors/index.js";
 
 const SALT_ROUNDS = 10;
 const JWT_EXPIRES_IN = "7d";
@@ -19,7 +20,7 @@ export class AuthService implements AuthServiceInterface {
     const normalizedEmail = email.toLowerCase().trim();
     const existingUser = await this.userRepository.findByEmail(normalizedEmail);
     if (existingUser) {
-      throw new Error("A user with this email already exists");
+      throw new EmailAlreadyExistsError();
     }
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
@@ -32,12 +33,12 @@ export class AuthService implements AuthServiceInterface {
     const normalizedEmail = email.toLowerCase().trim();
     const user = await this.userRepository.findByEmail(normalizedEmail);
     if (!user) {
-      throw new Error("Invalid email or password");
+      throw new InvalidCredentialsError();
     }
 
     const passwordMatches = await bcrypt.compare(password, user.passwordHash);
     if (!passwordMatches) {
-      throw new Error("Invalid email or password");
+      throw new InvalidCredentialsError();
     }
 
     return this.buildAuthResult(user._id.toString(), user.name, user.email);

@@ -37,11 +37,34 @@ Wiring is done with `tsyringe`, not manual `new` chains. `src/di/container.ts` e
 - `reflect-metadata` is imported once (top of `src/di/container.ts`) — required by tsyringe's decorator metadata reflection. `tsconfig.json` has `experimentalDecorators`/`emitDecoratorMetadata` enabled to support this.
 - **When adding a new interface + implementation**: add a token in `tokens.ts`, `@injectable()` the class, `@inject(TOKENS.X)` any interface-typed constructor params, then register it in `configureContainer()`. Nothing in `index.ts` needs to change beyond resolving the new top-level class if it's an entry point (e.g. a controller).
 
+## Error handling
+
+Request-context errors are thrown as typed `AppError` subclasses, never plain `Error`. Express 5 auto-forwards rejected promises from async route handlers to error middleware, so services/controllers just `throw`; nothing needs try/catch for this.
+
+- `src/errors/error-codes.ts` — `ERROR_CODES`, one entry per error type: `{ code, status, message }`. Mirrored (data only, no classes) in the frontend at `Rag-ui/src/errors/error-codes.ts` so both sides agree on codes/messages.
+- `src/errors/app-error.ts` — abstract `AppError extends Error` base (`code`, `statusCode`, `message`).
+- One subclass per error type, each defaulting its message from `ERROR_CODES` but overridable via constructor arg: `ValidationError` (400), `EmailAlreadyExistsError` (409), `InvalidCredentialsError` (401), `UnauthorizedError` (401), `NotFoundError` (404), `InternalError` (500).
+- `src/errors/index.ts` — barrel re-exporting everything above; import from `../errors/index.js`, not individual files.
+- `src/middleware/error-handler.ts` — `errorHandler`, the last middleware mounted in `index.ts`. `AppError` instances map to their own `statusCode`/`code`/`message`; anything else is logged and collapsed to a generic `INTERNAL_ERROR` 500 (never leaks internal error details to the client).
+- **When adding a new failure case**: add an entry to `ERROR_CODES` (both backend and frontend copies), add a subclass in `src/errors/`, export it from `src/errors/index.ts`, then `throw` it directly from the service/controller — don't catch it locally just to translate it into a manual `res.status(...).json(...)` call.
+
 ## Folder structure
 
 ```
 index.ts                              # Express entry point: configureContainer() + resolve + mount routes
 src/
+  errors/
+    error-codes.ts                    # ERROR_CODES — code/status/message per error type
+    app-error.ts                      # AppError abstract base class
+    validation-error.ts               # ValidationError (400)
+    email-already-exists-error.ts     # EmailAlreadyExistsError (409)
+    invalid-credentials-error.ts      # InvalidCredentialsError (401)
+    unauthorized-error.ts             # UnauthorizedError (401)
+    not-found-error.ts                # NotFoundError (404)
+    internal-error.ts                 # InternalError (500)
+    index.ts                          # barrel export of all of the above
+  middleware/
+    error-handler.ts                  # errorHandler — maps AppError -> HTTP response, last middleware mounted
   di/
     tokens.ts                         # TOKENS — Symbol per interface/config value used with @inject
     container.ts                      # configureContainer() — registers all interface tokens/values

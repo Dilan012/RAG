@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { inject, injectable } from "tsyringe";
 import type { AuthServiceInterface } from "../services/interfaces/auth-service.interface.js";
 import { TOKENS } from "../di/tokens.js";
+import { ValidationError } from "../errors/index.js";
 
 @injectable()
 export class AuthController {
@@ -11,31 +12,21 @@ export class AuthController {
     const { name, email, password } = req.body ?? {};
 
     if (typeof name !== "string" || typeof email !== "string" || typeof password !== "string") {
-      res.status(400).json({ error: "name, email and password are required strings" });
-      return;
+      throw new ValidationError("name, email and password are required strings");
     }
 
-    try {
-      const result = await this.authService.signup(name, email, password);
-      res.status(201).json(result);
-    } catch (error) {
-      res.status(409).json({ error: error instanceof Error ? error.message : "Signup failed" });
-    }
+    const result = await this.authService.signup(name, email, password);
+    res.status(201).json(result);
   };
 
   login = async (req: Request, res: Response): Promise<void> => {
     const { email, password } = req.body ?? {};
 
     if (typeof email !== "string" || typeof password !== "string") {
-      res.status(400).json({ error: "email and password are required strings" });
-      return;
+      throw new ValidationError("email and password are required strings");
     }
 
-    try {
-      const result = await this.authService.login(email, password);
-      res.json(result);
-    } catch (error) {
-      res.status(401).json({ error: error instanceof Error ? error.message : "Login failed" });
-    }
+    const result = await this.authService.login(email, password);
+    res.json(result);
   };
 }
