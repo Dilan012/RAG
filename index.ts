@@ -11,6 +11,8 @@ import { AuthController } from "./src/controllers/auth-controller.js";
 import { createAuthRouter } from "./src/routes/auth-routes.js";
 import { ConversationController } from "./src/controllers/conversation-controller.js";
 import { createConversationRouter } from "./src/routes/conversation-routes.js";
+import { MessageController } from "./src/controllers/message-controller.js";
+import { createMessageRouter } from "./src/routes/message-routes.js";
 import { errorHandler } from "./src/middleware/error-handler.js";
 import { responseHandler } from "./src/middleware/response-handler.js";
 import { ValidationError } from "./src/errors/index.js";
@@ -27,8 +29,10 @@ app.use(responseHandler);
 const chatService = container.resolve(ChatService);
 const authController = container.resolve(AuthController);
 const conversationController = container.resolve(ConversationController);
+const messageController = container.resolve(MessageController);
 app.use("/auth", createAuthRouter(authController));
 app.use("/conversations", createConversationRouter(conversationController));
+app.use("/messages", createMessageRouter(messageController));
 
 app.post("/chat", async (req: Request, res: Response) => {
   const { customerId, message } = req.body ?? {};

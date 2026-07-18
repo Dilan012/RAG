@@ -5,4 +5,9 @@ declare module "express-serve-static-core" {
     /** Sends a standardized success envelope: `{ success: true, data }`. */
     success<T>(data: T, statusCode?: number): void;
   }
+
+  interface Request {
+    /** Set by `authMiddleware` after verifying the request's JWT. */
+    userId?: string;
+  }
 }

@@ -8,6 +8,10 @@ export class MessageRepository implements MessageRepositoryInterface {
     return MessageModel.find({ customerId }).sort({ createdAt: 1 }).lean();
   }
 
+  async findByConversationId(conversationId: string): Promise<MessageDocument[]> {
+    return MessageModel.find({ conversationId }).sort({ createdAt: 1 }).lean();
+  }
+
   async create(document: Omit<MessageDocument, "createdAt">): Promise<void> {
     await MessageModel.create(document);
   }

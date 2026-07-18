@@ -5,6 +5,7 @@ export const TOKENS = {
   ConversationService: Symbol.for("ConversationServiceInterface"),
   AuthService: Symbol.for("AuthServiceInterface"),
   ChatConversationService: Symbol.for("ChatConversationServiceInterface"),
+  MessageService: Symbol.for("MessageServiceInterface"),
   ModelName: Symbol.for("SupportedModelName"),
   JwtSecret: Symbol.for("JwtSecret"),
 } as const;

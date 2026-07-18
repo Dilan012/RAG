@@ -7,6 +7,7 @@ import { ChatConversationRepository } from "../repositories/chat-conversation-re
 import { ConversationService } from "../services/conversation-service.js";
 import { AuthService } from "../services/auth-service.js";
 import { ChatConversationService } from "../services/chat-conversation-service.js";
+import { MessageService } from "../services/message-service.js";
 import type { SupportedModelName } from "../services/model-provider.js";
 
 export function configureContainer(): void {
@@ -16,6 +17,7 @@ export function configureContainer(): void {
   container.register(TOKENS.ConversationService, { useClass: ConversationService });
   container.register(TOKENS.AuthService, { useClass: AuthService });
   container.register(TOKENS.ChatConversationService, { useClass: ChatConversationService });
+  container.register(TOKENS.MessageService, { useClass: MessageService });
 
   const modelName: SupportedModelName = "gpt-4o-mini";
   container.register(TOKENS.ModelName, { useValue: modelName });
