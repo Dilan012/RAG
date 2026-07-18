@@ -25,7 +25,7 @@ export class ConversationRepository implements ConversationRepositoryInterface {
   }
 
   async updateName(id: string, name: string): Promise<ConversationDocument | null> {
-    return ConversationModel.findByIdAndUpdate(id, { name }, { new: true }).lean();
+    return ConversationModel.findByIdAndUpdate(id, { name }, { returnDocument: "after" }).lean();
   }
 
   async deleteById(id: string): Promise<boolean> {

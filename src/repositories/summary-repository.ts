@@ -15,7 +15,7 @@ export class SummaryRepository implements SummaryRepositoryInterface {
         $set: { content: input.content },
         $setOnInsert: { conversationId: input.conversationId, userId: input.userId },
       },
-      { new: true, upsert: true }
+      { returnDocument: "after", upsert: true }
     ).lean();
 
     // upsert: true guarantees a document is returned, either the updated existing
