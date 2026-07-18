@@ -10,6 +10,7 @@ import { ChatService } from "./src/services/chat-service.js";
 import { AuthController } from "./src/controllers/auth-controller.js";
 import { createAuthRouter } from "./src/routes/auth-routes.js";
 import { errorHandler } from "./src/middleware/error-handler.js";
+import { responseHandler } from "./src/middleware/response-handler.js";
 import { ValidationError } from "./src/errors/index.js";
 
 const PORT = process.env.PORT ?? 3000;
@@ -19,6 +20,7 @@ configureContainer();
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(responseHandler);
 
 const chatService = container.resolve(ChatService);
 const authController = container.resolve(AuthController);
@@ -32,7 +34,7 @@ app.post("/chat", async (req: Request, res: Response) => {
   }
 
   const reply = await chatService.chat(customerId, message);
-  res.json({ reply });
+  res.success({ reply });
 });
 
 app.use(errorHandler);

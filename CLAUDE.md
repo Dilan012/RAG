@@ -48,6 +48,18 @@ Request-context errors are thrown as typed `AppError` subclasses, never plain `E
 - `src/middleware/error-handler.ts` — `errorHandler`, the last middleware mounted in `index.ts`. `AppError` instances map to their own `statusCode`/`code`/`message`; anything else is logged and collapsed to a generic `INTERNAL_ERROR` 500 (never leaks internal error details to the client).
 - **When adding a new failure case**: add an entry to `ERROR_CODES` (both backend and frontend copies), add a subclass in `src/errors/`, export it from `src/errors/index.ts`, then `throw` it directly from the service/controller — don't catch it locally just to translate it into a manual `res.status(...).json(...)` call.
 
+## Response envelope
+
+Every JSON response — success or error — has the same top-level shape, so the frontend can branch on `success` without guessing a response's structure per endpoint:
+- Success: `{ success: true, data: T }`
+- Error: `{ success: false, error: string, code: string }`
+
+- `src/types/express.d.ts` — module augmentation adding `res.success<T>(data: T, statusCode = 200)` to Express's `Response` type. Augments `express-serve-static-core` (where `@types/express`'s `Response` is actually declared), not `express` itself — augmenting `express` directly breaks the `app.use`/`app.post` overload resolution.
+- `src/middleware/response-handler.ts` — `responseHandler`, mounted early in `index.ts` (right after `express.json()`), attaches `res.success` to every response.
+- Controllers call `res.success(result)` / `res.success(result, 201)` instead of `res.json(...)` / `res.status(...).json(...)`.
+- `errorHandler` (see Error handling above) independently emits the matching `{ success: false, ... }` shape for the error case — the two middlewares together are what make the envelope consistent across every route.
+- Frontend mirrors this with `Rag-ui/src/types/api.ts` (`ApiSuccessResponse<T>`); API functions (e.g. `auth-api.ts`) unwrap `res.data.data` to get back to the plain domain type.
+
 ## Folder structure
 
 ```
@@ -65,6 +77,9 @@ src/
     index.ts                          # barrel export of all of the above
   middleware/
     error-handler.ts                  # errorHandler — maps AppError -> HTTP response, last middleware mounted
+    response-handler.ts               # responseHandler — attaches res.success(data, status?), mounted early
+  types/
+    express.d.ts                      # module augmentation adding res.success to Express's Response
   di/
     tokens.ts                         # TOKENS — Symbol per interface/config value used with @inject
     container.ts                      # configureContainer() — registers all interface tokens/values

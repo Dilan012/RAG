@@ -16,7 +16,7 @@ export class AuthController {
     }
 
     const result = await this.authService.signup(name, email, password);
-    res.status(201).json(result);
+    res.success(result, 201);
   };
 
   login = async (req: Request, res: Response): Promise<void> => {
@@ -27,6 +27,6 @@ export class AuthController {
     }
 
     const result = await this.authService.login(email, password);
-    res.json(result);
+    res.success(result);
   };
 }

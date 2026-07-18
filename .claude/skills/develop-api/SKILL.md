@@ -14,7 +14,7 @@ Read `CLAUDE.md` at the repo root first — it documents the current state of ev
 - **`src/models/`** — Mongoose schema/model only. Export `<Thing>Document` interface (include `_id: Types.ObjectId` if repositories will return the raw doc) and `<Thing>Model`.
 - **`src/repositories/`** — the *only* layer allowed to import a Mongoose model or call it directly. One file per repository, plus its interface in `repositories/interfaces/<name>.interface.ts`.
 - **`src/services/`** — business logic/orchestration. Never imports a Mongoose model directly — if it needs data, it takes a repository interface as a constructor dependency. One file per service, plus its interface in `services/interfaces/<name>.interface.ts`.
-- **`src/controllers/`** — HTTP layer only: read `req.body`/`req.params`, `throw new ValidationError(...)` on bad input, call exactly one service method, shape the response. No business logic, no direct repository/model access, no try/catch (see Error handling below).
+- **`src/controllers/`** — HTTP layer only: read `req.body`/`req.params`, `throw new ValidationError(...)` on bad input, call exactly one service method, respond with `res.success(data, statusCode?)` (see Response envelope below). No business logic, no direct repository/model access, no try/catch, no raw `res.json(...)`.
 - **`src/routes/`** — thin `Router` factories (`createXRouter(controller)`) that bind controller methods to paths. No logic.
 
 A class only ever depends on the **interface** of the layer below it, never the concrete class (except `ModelProvider`, a static factory — see `CLAUDE.md`).
@@ -28,7 +28,7 @@ Work top-down; each step depends on the previous one existing:
 3. **Repository implementation** — `src/repositories/<thing>-repository.ts`: `@injectable()` class implementing that interface, only file allowed to touch `<Thing>Model`.
 4. **Service interface** — `src/services/interfaces/<thing>-service.interface.ts`: the business operations the controller needs, in domain terms (not Mongoose shapes).
 5. **Service implementation** — `src/services/<thing>-service.ts`: `@injectable()` class implementing the interface. Constructor takes the repository interface (and any other interface dependencies) via `@inject(TOKENS.X)`. Throw `AppError` subclasses for expected failure cases (see below) — never plain `Error` for anything reachable from a request.
-6. **Controller** — `src/controllers/<thing>-controller.ts`: `@injectable()` class, constructor takes the service interface via `@inject(TOKENS.X)`, methods are arrow-function class fields (`signup = async (req, res) => {...}`, so they can be passed directly to `router.post(...)` without losing `this`).
+6. **Controller** — `src/controllers/<thing>-controller.ts`: `@injectable()` class, constructor takes the service interface via `@inject(TOKENS.X)`, methods are arrow-function class fields (`signup = async (req, res) => {...}`, so they can be passed directly to `router.post(...)` without losing `this`). End each handler with `res.success(data, statusCode?)`, not `res.json(...)`.
 7. **Route** — `src/routes/<thing>-routes.ts`: `createXRouter(controller: XController): Router` binding paths to controller methods.
 8. **DI wiring** — in `src/di/tokens.ts` add a `Symbol.for("<Thing>RepositoryInterface")` / `...ServiceInterface` token for each new interface; in `src/di/container.ts` register each with `container.register(TOKENS.X, { useClass: ConcreteClass })`.
 9. **Mount** — in `index.ts`, resolve the controller with `container.resolve(XController)` and `app.use("/<path>", createXRouter(xController))`. Do not manually `new` anything here — everything comes from `configureContainer()` + `container.resolve(...)`.
@@ -49,6 +49,15 @@ Skip steps only when reusing an existing piece (e.g. a new service reusing `User
 - Services: throw the specific `AppError` subclass for each expected failure (e.g. `EmailAlreadyExistsError`, `InvalidCredentialsError`), not a generic `Error`.
 - **New failure case that doesn't map to an existing subclass**: add an entry to `ERROR_CODES` in both `src/errors/error-codes.ts` (backend) *and* `Rag-ui/src/errors/error-codes.ts` (frontend, data-only mirror) with a unique `code`, HTTP `status`, and default `message`; add a matching subclass in `src/errors/<name>-error.ts` extending `AppError`; export it from `src/errors/index.ts`. Do not reuse an unrelated error class just to avoid adding a new one — the whole point is that each failure type is distinguishable by `code` on the frontend.
 - Plain `Error` is only acceptable for startup/config failures that crash the process before it starts serving requests (see `src/di/container.ts`, `src/services/db.ts` for the existing examples) — never for anything a request can trigger.
+
+## Response envelope
+
+Every route responds with the same shape via two middlewares mounted in `index.ts` (`responseHandler` early, `errorHandler` last) — never call `res.json(...)` / `res.status(...).json(...)` directly in a controller:
+
+- Success: `res.success(data)` → `{ success: true, data }` (200), or `res.success(data, 201)` for a custom status.
+- Error: handled automatically by `errorHandler` from a thrown `AppError` → `{ success: false, error, code }`.
+
+If you ever need to extend `Response` again (like `res.success`), augment `express-serve-static-core`, not `express` — augmenting `express` directly breaks `app.use`/`app.post` overload resolution (see `src/types/express.d.ts`).
 
 ## After making changes
 
