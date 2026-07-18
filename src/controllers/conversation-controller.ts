@@ -4,10 +4,10 @@ import type { ChatConversationServiceInterface } from "../services/interfaces/ch
 import { TOKENS } from "../di/tokens.js";
 import { requireUserId } from "./require-user-id.js";
 import type {
-  ConversationIdParam,
-  CreateConversationInput,
-  UpdateConversationInput,
-} from "./schemas/conversation.schema.js";
+  ConversationIdParamDto,
+  CreateConversationDto,
+  UpdateConversationDto,
+} from "../dtos/conversation.dto.js";
 
 @injectable()
 export class ConversationController {
@@ -23,7 +23,7 @@ export class ConversationController {
 
   create = async (req: Request, res: Response): Promise<void> => {
     const userId = requireUserId(req);
-    const { name } = req.body as CreateConversationInput;
+    const { name } = req.body as CreateConversationDto;
 
     const conversation = await this.conversationService.createConversation(userId, name);
     res.success(conversation, 201);
@@ -31,8 +31,8 @@ export class ConversationController {
 
   update = async (req: Request, res: Response): Promise<void> => {
     const userId = requireUserId(req);
-    const { id } = req.params as ConversationIdParam;
-    const { name } = req.body as UpdateConversationInput;
+    const { id } = req.params as ConversationIdParamDto;
+    const { name } = req.body as UpdateConversationDto;
 
     const conversation = await this.conversationService.renameConversation(id, userId, name);
     res.success(conversation);
@@ -40,7 +40,7 @@ export class ConversationController {
 
   delete = async (req: Request, res: Response): Promise<void> => {
     const userId = requireUserId(req);
-    const { id } = req.params as ConversationIdParam;
+    const { id } = req.params as ConversationIdParamDto;
 
     await this.conversationService.deleteConversation(id, userId);
     res.success({ id });

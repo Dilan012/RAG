@@ -5,7 +5,7 @@ import {
   conversationIdParamSchema,
   createConversationSchema,
   updateConversationSchema,
-} from "../controllers/schemas/conversation.schema.js";
+} from "../dtos/conversation.dto.js";
 
 export function createConversationRouter(controller: ConversationController): Router {
   const router = Router();

@@ -4,7 +4,7 @@ import type { MessageServiceInterface } from "../services/interfaces/message-ser
 import type { ChatConversationServiceInterface } from "../services/interfaces/chat-conversation-service.interface.js";
 import { TOKENS } from "../di/tokens.js";
 import { requireUserId } from "./require-user-id.js";
-import type { ListMessagesQuery } from "./schemas/message.schema.js";
+import type { ListMessagesQueryDto } from "../dtos/message.dto.js";
 
 @injectable()
 export class MessageController {
@@ -17,7 +17,7 @@ export class MessageController {
     const userId = requireUserId(req);
     // req.query is validated by validateQuery(listMessagesQuerySchema) in message-routes.ts;
     // Express 5's req.query can't be reassigned, so this cast trusts that middleware ran.
-    const { conversationId } = req.query as unknown as ListMessagesQuery;
+    const { conversationId } = req.query as unknown as ListMessagesQueryDto;
 
     // Confirms the conversation exists and belongs to the caller before returning its messages.
     await this.conversationService.getConversation(conversationId, userId);

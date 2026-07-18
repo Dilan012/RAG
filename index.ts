@@ -19,8 +19,8 @@ import { responseHandler } from "./src/middleware/response-handler.js";
 import { createAuthMiddleware } from "./src/middleware/auth-middleware.js";
 import { validateBody } from "./src/middleware/validate-middleware.js";
 import { requireUserId } from "./src/controllers/require-user-id.js";
-import { chatSchema } from "./src/controllers/schemas/chat.schema.js";
-import type { ChatInput } from "./src/controllers/schemas/chat.schema.js";
+import { chatSchema } from "./src/dtos/chat.dto.js";
+import type { ChatDto } from "./src/dtos/chat.dto.js";
 
 const PORT = process.env.PORT ?? 3000;
 
@@ -43,7 +43,7 @@ app.use("/messages", authMiddleware, createMessageRouter(messageController));
 
 app.post("/chat", authMiddleware, validateBody(chatSchema), async (req: Request, res: Response) => {
   const userId = requireUserId(req);
-  const { message } = req.body as ChatInput;
+  const { message } = req.body as ChatDto;
 
   const reply = await chatService.chat(userId, message);
   res.success({ reply });

@@ -79,10 +79,10 @@ Validation happens in the **route**, as middleware — not inside the controller
 
 - `src/validation/validate.ts` — `validate(schema, data)`: the core `schema.safeParse(data)` + throw-`ValidationError`-on-failure helper. Not called directly from controllers/routes; it's what the middleware below is built on.
 - `src/middleware/validate-middleware.ts` — `validateBody(schema)`, `validateParams(schema)`, `validateQuery(schema)`: each returns Express middleware. `validateBody`/`validateParams` reassign/mutate `req.body`/`req.params` in place with the parsed (and thus type-narrowed) result. **`validateQuery` cannot do that** — Express 5 makes `req.query` a getter with no setter — so it only validates for the throw-on-failure side effect; the controller still reads `req.query` afterwards (now guaranteed to match the schema, but requires a cast — see below).
-- `src/controllers/schemas/<resource>.schema.ts` — one file per resource, colocated with the controller that uses it. Each schema also exports its inferred type (`export type XInput = z.infer<typeof xSchema>`) for the controller to cast to. `common.schema.ts` holds `objectIdSchema` (a `z.string().refine(isValidObjectId, ...)`) shared by every resource that validates a Mongo id from a param/query.
+- `src/dtos/<resource>.dto.ts` — one file per resource. Each file exports the zod schema(s) (variable name suffixed `Schema`, e.g. `signupSchema`) plus the corresponding **DTO** — the inferred TypeScript type the controller casts to, named `<Thing>Dto` (`export type SignupDto = z.infer<typeof signupSchema>`). `common.dto.ts` holds `objectIdSchema` (a `z.string().refine(isValidObjectId, ...)`) shared by every resource that validates a Mongo id from a param/query. This is its own top-level layer (like `errors/`, `middleware/`), not nested under `controllers/` — both routes (which consume the schemas) and controllers (which consume the DTO types) import from it.
 - In the route: `router.post("/", validateBody(createXSchema), controller.create)` (chain as many `validate*` middlewares as the route needs, before the controller method).
-- In the controller: `const { field } = req.body as XInput;` (or `req.params as XParam` / `req.query as unknown as XQuery` for query, per the getter caveat above) — a type assertion, not re-validation. The assertion is safe *because* the route already validated; a controller method reached without its route's `validate*` middleware would silently trust unvalidated data, so never skip wiring the middleware when adding a route.
-- **When adding a new endpoint**: write its zod schema (+ exported inferred type) in `controllers/schemas/`, wire `validateBody`/`validateParams`/`validateQuery` into the route, then read `req.body`/`req.params`/`req.query` in the controller with the inferred-type cast. Don't reintroduce manual `typeof x !== "string"` checks, don't call `isValidObjectId` ad hoc outside a schema, and don't call `validate(...)` directly from a controller.
+- In the controller: `const { field } = req.body as XDto;` (or `req.params as XParamDto` / `req.query as unknown as XQueryDto` for query, per the getter caveat above) — a type assertion, not re-validation. The assertion is safe *because* the route already validated; a controller method reached without its route's `validate*` middleware would silently trust unvalidated data, so never skip wiring the middleware when adding a route.
+- **When adding a new endpoint**: write its zod schema + exported `<Thing>Dto` type in `src/dtos/`, wire `validateBody`/`validateParams`/`validateQuery` into the route, then read `req.body`/`req.params`/`req.query` in the controller with the DTO cast. Don't reintroduce manual `typeof x !== "string"` checks, don't call `isValidObjectId` ad hoc outside a schema, and don't call `validate(...)` directly from a controller.
 
 ## Folder structure
 
@@ -106,6 +106,12 @@ src/
     validate-middleware.ts            # validateBody/validateParams/validateQuery — route-level zod validation
   validation/
     validate.ts                       # validate(schema, data) — zod safeParse -> ValidationError on failure (used by validate-middleware.ts, not called directly from controllers)
+  dtos/
+    common.dto.ts                     # objectIdSchema — shared Mongo id validator
+    auth.dto.ts                       # signupSchema/SignupDto, loginSchema/LoginDto
+    conversation.dto.ts               # create/update/idParam schemas + CreateConversationDto, UpdateConversationDto, ConversationIdParamDto
+    message.dto.ts                    # listMessagesQuerySchema, ListMessagesQueryDto
+    chat.dto.ts                       # chatSchema, ChatDto (used directly in index.ts's /chat handler)
   types/
     express.d.ts                      # module augmentation: res.success, req.userId on Express's types
   di/
@@ -116,12 +122,6 @@ src/
     user.ts                           # Mongoose schema/model: UserModel, UserDocument
     chat-conversation.ts              # Mongoose schema/model: ChatConversationModel, ChatConversationDocument
   controllers/
-    schemas/
-      common.schema.ts                # objectIdSchema — shared Mongo id validator
-      auth.schema.ts                  # signupSchema, loginSchema
-      conversation.schema.ts          # createConversationSchema, updateConversationSchema, conversationIdParamSchema
-      message.schema.ts               # listMessagesQuerySchema
-      chat.schema.ts                  # chatSchema (used directly in index.ts's /chat handler)
     require-user-id.ts                # requireUserId(req) — reads req.userId, throws UnauthorizedError if absent
     auth-controller.ts                # AuthController — HTTP layer for /auth routes (public, no authMiddleware)
     conversation-controller.ts        # ConversationController — /conversations CRUD, behind authMiddleware
