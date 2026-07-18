@@ -3,8 +3,8 @@ import mongoose from "mongoose";
 
 // Some Windows setups have an IPv6-only DNS server configured at the OS level. Node's
 // resolver can fail SRV lookups (used by mongodb+srv:// URIs) against those even though
-// the OS's own resolver handles them fine. Forcing known-good IPv4 DNS servers here works
-// around that without requiring a change to the machine's network settings.
+// the OS's own resolver handles them fine.
+
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
 let connectionPromise: Promise<typeof mongoose> | null = null;

@@ -38,8 +38,8 @@ const messageController = container.resolve(MessageController);
 const authMiddleware = createAuthMiddleware(container.resolve<string>(TOKENS.JwtSecret));
 
 app.use("/auth", createAuthRouter(authController));
-app.use("/conversations", authMiddleware, createConversationRouter(conversationController));
-app.use("/messages", authMiddleware, createMessageRouter(messageController));
+app.use("/conversations", createConversationRouter(conversationController, authMiddleware));
+app.use("/messages", createMessageRouter(messageController, authMiddleware));
 
 app.post("/chat", authMiddleware, validateBody(chatSchema), async (req: Request, res: Response) => {
   const userId = requireUserId(req);
