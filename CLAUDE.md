@@ -121,6 +121,7 @@ src/
     message.ts                        # Mongoose schema/model: MessageModel, MessageDocument
     user.ts                           # Mongoose schema/model: UserModel, UserDocument
     conversation.ts                    # Mongoose schema/model: ConversationModel, ConversationDocument
+    summary.ts                         # Mongoose schema/model: SummaryModel, SummaryDocument (one row per conversation, upserted)
   controllers/
     require-user-id.ts                # requireUserId(req) — reads req.userId, throws UnauthorizedError if absent
     auth-controller.ts                # AuthController — HTTP layer for /auth routes (public, no authMiddleware)
@@ -137,11 +138,13 @@ src/
       auth-service.interface.ts       # AuthServiceInterface, AuthUser, AuthResult
       conversation-service.interface.ts  # ConversationServiceInterface, ConversationSummary (persisted conversation entity — CRUD, not LLM memory)
       message-service.interface.ts    # MessageServiceInterface, MessageSummary
+      summary-service.interface.ts    # SummaryServiceInterface, SummaryRecord
     chat-service.ts                   # ChatService implements ChatServiceInterface
     chat-memory-service.ts             # ChatMemoryService implements ChatMemoryServiceInterface
     auth-service.ts                   # AuthService implements AuthServiceInterface (bcrypt + jwt)
     conversation-service.ts            # ConversationService implements ConversationServiceInterface
     message-service.ts                # MessageService implements MessageServiceInterface
+    summary-service.ts                # SummaryService implements SummaryServiceInterface (LLM summarization)
     model-provider.ts                 # ModelProvider (static ChatOpenRouter cache/factory)
     db.ts                             # connectToDatabase() — cached Mongoose connection
   repositories/
@@ -149,9 +152,11 @@ src/
       message-repository.interface.ts # MessageRepositoryInterface
       user-repository.interface.ts    # UserRepositoryInterface
       conversation-repository.interface.ts  # ConversationRepositoryInterface, CreateConversationInput
+      summary-repository.interface.ts # SummaryRepositoryInterface, UpsertSummaryInput
     message-repository.ts             # MessageRepository implements MessageRepositoryInterface
     user-repository.ts                # UserRepository implements UserRepositoryInterface
     conversation-repository.ts         # ConversationRepository implements ConversationRepositoryInterface
+    summary-repository.ts             # SummaryRepository implements SummaryRepositoryInterface
 ```
 
 **Naming history** (matters if old code/docs/branches reference former names): the persisted `userId` + `name` conversation entity's model/repository/service were briefly named `ChatConversation*` because the plain `Conversation*` name was, at the time, taken by the LLM message-history load/append logic used by `ChatService`. That logic was renamed `ChatMemoryService`/`ChatMemoryServiceInterface` (clearer: it's the LLM-memory layer, not conversation CRUD) specifically to free up `Conversation*` for the entity, which was then renamed back from `ChatConversation*` to the current `Conversation*`. The HTTP-facing `ConversationController`/`conversation-routes.ts` names never changed — they were never in conflict with either.
@@ -165,10 +170,13 @@ Each layer (`services/`, `repositories/`) owns its own `interfaces/` subfolder �
 - **`src/services/`** — business logic/orchestration, built on top of repositories:
   - `model-provider.ts` — `ModelProvider` is a **static** cache/factory over `ChatOpenRouter` instances, keyed by model name (`SupportedModelName`, a fixed union of 5 models: 3 GPT + 2 Gemini Flash). No interface (a static-only class can't implement one), and no `new ModelProvider()` — call `ModelProvider.getModel(name)` directly.
   - `chat-service.ts` — `ChatService` is constructed with a model name and a `ChatMemoryServiceInterface` (dependency injection, not a singleton). `chat()` loads prior history, invokes the model, persists both the user message and the reply.
-  - `chat-memory-service.ts` — `ChatMemoryService` (the LLM memory layer — manages what context gets fed back into the model) is constructed with a `MessageRepositoryInterface`; contains no direct Mongoose/DB calls itself — it only maps between `ChatMessage` (domain shape) and whatever the repository returns.
+  - `chat-memory-service.ts` — `ChatMemoryService` (the LLM memory layer — manages what context gets fed back into the model) is constructed with a `MessageRepositoryInterface`, `SummaryRepositoryInterface`, and `SummaryServiceInterface`; contains no direct Mongoose/DB calls itself — it only maps between `ChatMessage` (domain shape) and whatever the repositories return.
+    - `getHistory(userId, conversationId?)` builds **full context = summary + messages since that summary**, not just raw messages: it looks up any existing `Summary` for the conversation, then fetches only the messages created *after* that summary's `createdAt` (via `MessageRepository.findByConversationIdSince`). If a summary exists, it's prepended as a `role: "system"` entry (`ChatMessage.role` includes `"system"` for exactly this) before the recent messages. Without a `conversationId` (the legacy/unscoped case), it falls back to all of the user's messages with no summary involved.
+    - `appendMessage(userId, message, conversationId?)` saves the message, then (if `conversationId` is set) calls private `maybeSummarize()`: counts messages since the last summary via `MessageRepository.countByConversationIdSince`, and once that count reaches `SUMMARIZATION_MESSAGE_COUNT` (currently 10), fetches those messages and calls `SummaryService.summarizeConversation(conversationId, userId, messages)` — which itself independently loads the prior summary and folds it in before upserting (see `summary-service.ts` below), so summaries keep accumulating context rather than being replaced wholesale each time.
   - `auth-service.ts` — `AuthService` is constructed with a `UserRepositoryInterface`, the JWT secret, and an optional expiry. `signup()` rejects duplicate emails and hashes the password with bcrypt; `login()` verifies the hash; both return `{ user, token }` with a signed JWT.
   - `conversation-service.ts` — `ConversationService` is constructed with a `ConversationRepositoryInterface`. `renameConversation`/`deleteConversation`/`getConversation` all go through a private `getOwnedConversation(id, userId)` first, throwing `NotFoundError` (not `UnauthorizedError`) if the conversation doesn't exist or isn't owned by that user — avoids confirming a conversation id exists to a non-owner. Not to be confused with `chat-memory-service.ts`'s `ChatMemoryService` — this one is CRUD for the conversation entity itself, that one is LLM message-history load/append.
   - `message-service.ts` — `MessageService` is constructed with a `MessageRepositoryInterface`; `listMessages(conversationId, userId)` maps raw documents to `MessageSummary`. Two independent layers enforce that a user can only ever see their own messages: `MessageController` checks conversation ownership via `ConversationService.getConversation` *before* calling this, **and** `MessageRepository.findByConversationId(conversationId, userId)` filters by `userId` at the database query itself — so even a bug that skipped the ownership check, or a future caller of the repository that forgets it, still can't leak another user's messages. Always pass `userId` all the way to the repository query for anything message-related; never filter by `conversationId` alone.
+  - `summary-service.ts` — `SummaryService` is constructed with a model name and a `SummaryRepositoryInterface`. `summarizeConversation(conversationId, userId, messages)` loads any existing `Summary` for the conversation, feeds it back to the LLM as prior context alongside the new `messages` (so the summary accumulates rather than resets), and `upsert`s the result — one `Summary` row per conversation, not a history log. Only called from `ChatMemoryService.maybeSummarize` today (see below); no controller/route yet.
   - `db.ts` — `connectToDatabase()` lazily creates and caches a single Mongoose connection promise (the promise itself is cached, not the resolved value, so concurrent early callers share one in-flight connection).
 
 ## Development practices

@@ -5,6 +5,14 @@ import type { CreateMessageInput, MessageRepositoryInterface } from "./interface
 
 const DEFAULT_MESSAGE_LIMIT = 50;
 
+function conversationSinceFilter(conversationId: string, userId: string, after?: Date) {
+  return {
+    conversationId,
+    userId,
+    ...(after ? { createdAt: { $gt: after } } : {}),
+  };
+}
+
 @injectable()
 export class MessageRepository implements MessageRepositoryInterface {
   async findByUserId(userId: string): Promise<MessageDocument[]> {
@@ -24,6 +32,16 @@ export class MessageRepository implements MessageRepositoryInterface {
       .limit(limit)
       .lean();
     return messages.reverse();
+  }
+
+  async findByConversationIdSince(conversationId: string, userId: string, after?: Date): Promise<MessageDocument[]> {
+    return MessageModel.find(conversationSinceFilter(conversationId, userId, after))
+      .sort({ createdAt: 1 })
+      .lean();
+  }
+
+  async countByConversationIdSince(conversationId: string, userId: string, after?: Date): Promise<number> {
+    return MessageModel.countDocuments(conversationSinceFilter(conversationId, userId, after));
   }
 
   async create(input: CreateMessageInput): Promise<void> {
