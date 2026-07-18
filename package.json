@@ -7,7 +7,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsc --watch"
+    "dev": "concurrently -k -n tsc,node -c blue,green \"tsc --watch --preserveWatchOutput\" \"node --watch dist/index.js\""
   },
   "keywords": [],
   "author": "",
@@ -31,6 +31,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "^26.1.1"
+    "@types/node": "^26.1.1",
+    "concurrently": "^10.0.3"
   }
 }
