@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { inject, injectable } from "tsyringe";
-import type { ChatConversationServiceInterface } from "../services/interfaces/chat-conversation-service.interface.js";
+import type { ConversationServiceInterface } from "../services/interfaces/conversation-service.interface.js";
 import { TOKENS } from "../di/tokens.js";
 import { requireUserId } from "./require-user-id.js";
 import type {
@@ -12,7 +12,7 @@ import type {
 @injectable()
 export class ConversationController {
   constructor(
-    @inject(TOKENS.ChatConversationService) private readonly conversationService: ChatConversationServiceInterface
+    @inject(TOKENS.ConversationService) private readonly conversationService: ConversationServiceInterface
   ) {}
 
   list = async (req: Request, res: Response): Promise<void> => {

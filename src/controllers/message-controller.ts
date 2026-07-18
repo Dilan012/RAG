@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { inject, injectable } from "tsyringe";
 import type { MessageServiceInterface } from "../services/interfaces/message-service.interface.js";
-import type { ChatConversationServiceInterface } from "../services/interfaces/chat-conversation-service.interface.js";
+import type { ConversationServiceInterface } from "../services/interfaces/conversation-service.interface.js";
 import { TOKENS } from "../di/tokens.js";
 import { requireUserId } from "./require-user-id.js";
 import type { ListMessagesQueryDto } from "../dtos/message.dto.js";
@@ -10,7 +10,7 @@ import type { ListMessagesQueryDto } from "../dtos/message.dto.js";
 export class MessageController {
   constructor(
     @inject(TOKENS.MessageService) private readonly messageService: MessageServiceInterface,
-    @inject(TOKENS.ChatConversationService) private readonly conversationService: ChatConversationServiceInterface
+    @inject(TOKENS.ConversationService) private readonly conversationService: ConversationServiceInterface
   ) {}
 
   list = async (req: Request, res: Response): Promise<void> => {

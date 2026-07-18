@@ -1,11 +1,13 @@
 export const TOKENS = {
   MessageRepository: Symbol.for("MessageRepositoryInterface"),
   UserRepository: Symbol.for("UserRepositoryInterface"),
-  ChatConversationRepository: Symbol.for("ChatConversationRepositoryInterface"),
-  ConversationService: Symbol.for("ConversationServiceInterface"),
+  ConversationRepository: Symbol.for("ConversationRepositoryInterface"),
+  SummaryRepository: Symbol.for("SummaryRepositoryInterface"),
+  ChatMemoryService: Symbol.for("ChatMemoryServiceInterface"),
   AuthService: Symbol.for("AuthServiceInterface"),
-  ChatConversationService: Symbol.for("ChatConversationServiceInterface"),
+  ConversationService: Symbol.for("ConversationServiceInterface"),
   MessageService: Symbol.for("MessageServiceInterface"),
+  SummaryService: Symbol.for("SummaryServiceInterface"),
   ModelName: Symbol.for("SupportedModelName"),
   JwtSecret: Symbol.for("JwtSecret"),
 } as const;

@@ -1,6 +1,6 @@
 import { Schema, model, Types } from "mongoose";
 
-export interface ChatConversationDocument {
+export interface ConversationDocument {
   _id: Types.ObjectId;
   userId: Types.ObjectId;
   name: string;
@@ -8,7 +8,7 @@ export interface ChatConversationDocument {
   updatedAt: Date;
 }
 
-const chatConversationSchema = new Schema<ChatConversationDocument>(
+const conversationSchema = new Schema<ConversationDocument>(
   {
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     name: { type: String, required: true, trim: true },
@@ -16,4 +16,4 @@ const chatConversationSchema = new Schema<ChatConversationDocument>(
   { timestamps: true }
 );
 
-export const ChatConversationModel = model<ChatConversationDocument>("ChatConversation", chatConversationSchema);
+export const ConversationModel = model<ConversationDocument>("Conversation", conversationSchema);
