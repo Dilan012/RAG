@@ -3,14 +3,27 @@ import { Types } from "mongoose";
 import { MessageModel, type MessageDocument } from "../models/message.js";
 import type { CreateMessageInput, MessageRepositoryInterface } from "./interfaces/message-repository.interface.js";
 
+const DEFAULT_MESSAGE_LIMIT = 50;
+
 @injectable()
 export class MessageRepository implements MessageRepositoryInterface {
   async findByUserId(userId: string): Promise<MessageDocument[]> {
     return MessageModel.find({ userId }).sort({ createdAt: 1 }).lean();
   }
 
-  async findByConversationId(conversationId: string, userId: string): Promise<MessageDocument[]> {
-    return MessageModel.find({ conversationId, userId }).sort({ createdAt: 1 }).lean();
+  async findByConversationId(
+    conversationId: string,
+    userId: string,
+    limit: number = DEFAULT_MESSAGE_LIMIT
+  ): Promise<MessageDocument[]> {
+    // Fetch the most recent `limit` messages, then reverse back to chronological
+    // order — sorting descending first is what lets .limit() keep the latest
+    // messages instead of the oldest ones.
+    const messages = await MessageModel.find({ conversationId, userId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+    return messages.reverse();
   }
 
   async create(input: CreateMessageInput): Promise<void> {

@@ -9,6 +9,6 @@ export interface CreateMessageInput {
 
 export interface MessageRepositoryInterface {
   findByUserId(userId: string): Promise<MessageDocument[]>;
-  findByConversationId(conversationId: string, userId: string): Promise<MessageDocument[]>;
+  findByConversationId(conversationId: string, userId: string, limit?: number): Promise<MessageDocument[]>;
   create(input: CreateMessageInput): Promise<void>;
 }
