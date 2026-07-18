@@ -14,8 +14,8 @@ Read `CLAUDE.md` at the repo root first — it documents the current state of ev
 - **`src/models/`** — Mongoose schema/model only. Export `<Thing>Document` interface (include `_id: Types.ObjectId` if repositories will return the raw doc) and `<Thing>Model`.
 - **`src/repositories/`** — the *only* layer allowed to import a Mongoose model or call it directly. One file per repository, plus its interface in `repositories/interfaces/<name>.interface.ts`.
 - **`src/services/`** — business logic/orchestration. Never imports a Mongoose model directly — if it needs data, it takes a repository interface as a constructor dependency. One file per service, plus its interface in `services/interfaces/<name>.interface.ts`.
-- **`src/controllers/`** — HTTP layer only: read `req.body`/`req.params`, `throw new ValidationError(...)` on bad input, call exactly one service method, respond with `res.success(data, statusCode?)` (see Response envelope below). No business logic, no direct repository/model access, no try/catch, no raw `res.json(...)`.
-- **`src/routes/`** — thin `Router` factories (`createXRouter(controller)`) that bind controller methods to paths. No logic.
+- **`src/controllers/`** — HTTP layer only: read already-validated `req.body`/`req.params`/`req.query` (cast to the schema's inferred type — see Input validation below; validation itself runs in the route, not here), get the caller's id with `requireUserId(req)` on any protected route, call exactly one service method, respond with `res.success(data, statusCode?)` (see Response envelope below). No business logic, no direct repository/model access, no try/catch, no raw `res.json(...)`, no manual `typeof` checks, no calling `validate(...)`/zod directly.
+- **`src/routes/`** — thin `Router` factories (`createXRouter(controller)`) that bind controller methods to paths, chaining `validateBody`/`validateParams`/`validateQuery` middleware in front of the controller method for any route that takes input (see Input validation below).
 
 A class only ever depends on the **interface** of the layer below it, never the concrete class (except `ModelProvider`, a static factory — see `CLAUDE.md`).
 
@@ -28,10 +28,13 @@ Work top-down; each step depends on the previous one existing:
 3. **Repository implementation** — `src/repositories/<thing>-repository.ts`: `@injectable()` class implementing that interface, only file allowed to touch `<Thing>Model`.
 4. **Service interface** — `src/services/interfaces/<thing>-service.interface.ts`: the business operations the controller needs, in domain terms (not Mongoose shapes).
 5. **Service implementation** — `src/services/<thing>-service.ts`: `@injectable()` class implementing the interface. Constructor takes the repository interface (and any other interface dependencies) via `@inject(TOKENS.X)`. Throw `AppError` subclasses for expected failure cases (see below) — never plain `Error` for anything reachable from a request.
-6. **Controller** — `src/controllers/<thing>-controller.ts`: `@injectable()` class, constructor takes the service interface via `@inject(TOKENS.X)`, methods are arrow-function class fields (`signup = async (req, res) => {...}`, so they can be passed directly to `router.post(...)` without losing `this`). End each handler with `res.success(data, statusCode?)`, not `res.json(...)`.
-7. **Route** — `src/routes/<thing>-routes.ts`: `createXRouter(controller: XController): Router` binding paths to controller methods.
-8. **DI wiring** — in `src/di/tokens.ts` add a `Symbol.for("<Thing>RepositoryInterface")` / `...ServiceInterface` token for each new interface; in `src/di/container.ts` register each with `container.register(TOKENS.X, { useClass: ConcreteClass })`.
-9. **Mount** — in `index.ts`, resolve the controller with `container.resolve(XController)` and `app.use("/<path>", createXRouter(xController))`. Do not manually `new` anything here — everything comes from `configureContainer()` + `container.resolve(...)`.
+6. **Validation schemas** — `src/controllers/schemas/<thing>.schema.ts`: one zod schema per request shape the controller accepts (body/params/query), each with an exported inferred type (`export type XInput = z.infer<typeof xSchema>`). Reuse `common.schema.ts`'s `objectIdSchema` for any Mongo id coming from a param/query.
+7. **Controller** — `src/controllers/<thing>-controller.ts`: `@injectable()` class, constructor takes the service interface via `@inject(TOKENS.X)`, methods are arrow-function class fields (`signup = async (req, res) => {...}`, so they can be passed directly to `router.post(...)` without losing `this`). Read input as `req.body as XInput` (etc.) — validation already happened in the route's middleware, so the controller only casts, never validates. If the route is protected, get the caller's id with `requireUserId(req)` (`src/controllers/require-user-id.ts`) — never trust a client-supplied `userId` in the body/query on a protected route. End each handler with `res.success(data, statusCode?)`, not `res.json(...)`.
+8. **Route** — `src/routes/<thing>-routes.ts`: `createXRouter(controller: XController): Router` binding paths to controller methods, with `validateBody`/`validateParams`/`validateQuery(schema)` (`src/middleware/validate-middleware.ts`) chained in front of any method that takes input (see Input validation below). Decide whether the route needs `authMiddleware` (see Authentication below) — apply it when mounting in `index.ts`, not inside the router factory.
+9. **DI wiring** — in `src/di/tokens.ts` add a `Symbol.for("<Thing>RepositoryInterface")` / `...ServiceInterface` token for each new interface; in `src/di/container.ts` register each with `container.register(TOKENS.X, { useClass: ConcreteClass })`.
+10. **Mount** — in `index.ts`, resolve the controller with `container.resolve(XController)` and `app.use("/<path>", [authMiddleware,] createXRouter(xController))`. Do not manually `new` anything here — everything comes from `configureContainer()` + `container.resolve(...)`.
+
+**Naming collisions**: before naming a new repository/service/interface `<Thing>*`, check `src/services/interfaces/` and `src/repositories/interfaces/` for an existing file with that base name that means something different (e.g. `ConversationService`/`ConversationServiceInterface` already exists for `ChatService`'s message-history logic — an unrelated, persisted "conversation" entity had to be named `ChatConversation*` instead to avoid colliding with it). Controllers/routes are a separate namespace from services/repositories, so `ConversationController`/`conversation-routes.ts` were fine even though `ConversationService` was taken.
 
 Skip steps only when reusing an existing piece (e.g. a new service reusing `UserRepository` doesn't need a new repository).
 
@@ -41,6 +44,18 @@ Skip steps only when reusing an existing piece (e.g. a new service reusing `User
 - `@inject(TOKENS.X)` on every constructor parameter typed as an **interface**. Parameters typed as a concrete class (rare) don't need `@inject`.
 - Every interface needs a token in `TOKENS` (`src/di/tokens.ts`) and a registration in `configureContainer()` (`src/di/container.ts`) — `useClass` for implementations, `useValue` for primitive config (secrets, model names, etc.).
 - Never `new` a repository/service/controller by hand outside `container.ts` — always resolve via the container (`container.resolve(X)`) or receive it through a constructor.
+
+## Input validation (zod) checklist
+
+- Validation runs in the **route**, as middleware, never inside the controller. `src/middleware/validate-middleware.ts` exports `validateBody(schema)` / `validateParams(schema)` / `validateQuery(schema)` — chain the ones a route needs before its controller method: `router.post("/", validateBody(createXSchema), controller.create)`.
+- `validateBody`/`validateParams` mutate `req.body`/`req.params` in place with the parsed result. `validateQuery` **cannot** — Express 5's `req.query` is a getter with no setter — so it only validates for the throw side effect; the controller casts `req.query as unknown as XQuery` afterward.
+- In the controller, read input as `req.body as XInput` / `req.params as XParam` — a cast, not a re-validation. This is only safe because the route's middleware already ran; every route that takes input must have its `validate*` middleware wired, with no exceptions "because it's simple."
+- Every schema file exports its inferred type alongside the schema (`export type XInput = z.infer<typeof xSchema>`) for controllers to cast to.
+- Never call `validate(...)` (the low-level `src/validation/validate.ts` helper) directly from a controller — that's what `validate-middleware.ts` wraps for you.
+
+## Authentication
+
+`src/middleware/auth-middleware.ts` exports `createAuthMiddleware(jwtSecret)`. Get the secret via `container.resolve<string>(TOKENS.JwtSecret)` in `index.ts`, then mount per-router: `app.use("/things", authMiddleware, createThingRouter(...))`. It verifies the `Authorization: Bearer <token>` header and sets `req.userId`; a protected controller reads it with `requireUserId(req)` (`src/controllers/require-user-id.ts`), never from a client-supplied `userId` body/query field. `/auth` (how you get a token) and `/chat` (not yet migrated) are the only unprotected routes today — any new resource tied to a specific user should be protected by default unless there's a specific reason not to.
 
 ## Error handling checklist
 

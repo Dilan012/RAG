@@ -24,7 +24,7 @@ Requires a `.env` file (loaded via `dotenv` in `index.ts`) with:
 
 This is an Express + LangChain + MongoDB chat backend with a `/chat` endpoint (e.g. for a WhatsApp-style customer chat integration) and `/auth` signup/login endpoints. Entry point is `index.ts` at the repo root (not under `src/`).
 
-Request flow (chat): `POST /chat` (`index.ts`) → `ChatService.chat()` → `ModelProvider.getModel()` (LLM call) + `ConversationService` (MongoDB history) → returns `{ reply }`.
+Request flow (chat): `POST /chat` (`index.ts`, behind `authMiddleware`) → `chatService.chat(requireUserId(req), message)` → `ModelProvider.getModel()` (LLM call) + `ConversationService` (MongoDB history, keyed by the authenticated user's id) → returns `{ reply }`.
 
 Request flow (auth): `POST /auth/signup` | `POST /auth/login` (`src/routes/auth-routes.ts`) → `AuthController` (validates body shape, maps errors to HTTP status) → `AuthService` (hashing/JWT/business rules) → `UserRepository` (Mongoose) → returns `{ user, token }`.
 
@@ -60,6 +60,30 @@ Every JSON response — success or error — has the same top-level shape, so th
 - `errorHandler` (see Error handling above) independently emits the matching `{ success: false, ... }` shape for the error case — the two middlewares together are what make the envelope consistent across every route.
 - Frontend mirrors this with `Rag-ui/src/types/api.ts` (`ApiSuccessResponse<T>`); API functions (e.g. `auth-api.ts`) unwrap `res.data.data` to get back to the plain domain type.
 
+## Authentication middleware
+
+`src/middleware/auth-middleware.ts` exports `createAuthMiddleware(jwtSecret)`, a factory (not a DI-managed class, same style as `responseHandler`/`errorHandler`) returning an Express middleware that:
+1. Requires an `Authorization: Bearer <token>` header — throws `UnauthorizedError` if missing/malformed.
+2. Verifies the token with `jsonwebtoken` against `jwtSecret` — throws `UnauthorizedError` if invalid/expired.
+3. Reads the `sub` claim (the user id — `AuthService` signs tokens with `{ sub: id, email }`) and sets `req.userId`.
+
+Get the secret via `container.resolve<string>(TOKENS.JwtSecret)` in `index.ts`, then mount per-router: `app.use("/conversations", authMiddleware, createConversationRouter(...))`. `/chat` (a plain inline handler, not a router) is mounted the same way: `app.post("/chat", authMiddleware, validateBody(chatSchema), handler)`. Only `/auth` is intentionally NOT behind it — it's how you get a token in the first place. `/chat` derives its `customerId` from `requireUserId(req)`, not from the request body — `chatSchema` no longer accepts a `customerId` field at all.
+
+`req.userId` is typed via the same module augmentation file as `res.success` — `src/types/express.d.ts` — augmenting `express-serve-static-core`.
+
+In a protected controller, read the id with the shared helper `src/controllers/require-user-id.ts`'s `requireUserId(req)` (throws `UnauthorizedError` if somehow called without the middleware having run) rather than trusting a client-supplied `userId` in the body/query — see `ConversationController`/`MessageController` for the pattern. Never accept `userId` as client input on a route this middleware protects.
+
+## Input validation (zod)
+
+Validation happens in the **route**, as middleware — not inside the controller. Controllers trust that if they were reached, the request already matches the schema.
+
+- `src/validation/validate.ts` — `validate(schema, data)`: the core `schema.safeParse(data)` + throw-`ValidationError`-on-failure helper. Not called directly from controllers/routes; it's what the middleware below is built on.
+- `src/middleware/validate-middleware.ts` — `validateBody(schema)`, `validateParams(schema)`, `validateQuery(schema)`: each returns Express middleware. `validateBody`/`validateParams` reassign/mutate `req.body`/`req.params` in place with the parsed (and thus type-narrowed) result. **`validateQuery` cannot do that** — Express 5 makes `req.query` a getter with no setter — so it only validates for the throw-on-failure side effect; the controller still reads `req.query` afterwards (now guaranteed to match the schema, but requires a cast — see below).
+- `src/controllers/schemas/<resource>.schema.ts` — one file per resource, colocated with the controller that uses it. Each schema also exports its inferred type (`export type XInput = z.infer<typeof xSchema>`) for the controller to cast to. `common.schema.ts` holds `objectIdSchema` (a `z.string().refine(isValidObjectId, ...)`) shared by every resource that validates a Mongo id from a param/query.
+- In the route: `router.post("/", validateBody(createXSchema), controller.create)` (chain as many `validate*` middlewares as the route needs, before the controller method).
+- In the controller: `const { field } = req.body as XInput;` (or `req.params as XParam` / `req.query as unknown as XQuery` for query, per the getter caveat above) — a type assertion, not re-validation. The assertion is safe *because* the route already validated; a controller method reached without its route's `validate*` middleware would silently trust unvalidated data, so never skip wiring the middleware when adding a route.
+- **When adding a new endpoint**: write its zod schema (+ exported inferred type) in `controllers/schemas/`, wire `validateBody`/`validateParams`/`validateQuery` into the route, then read `req.body`/`req.params`/`req.query` in the controller with the inferred-type cast. Don't reintroduce manual `typeof x !== "string"` checks, don't call `isValidObjectId` ad hoc outside a schema, and don't call `validate(...)` directly from a controller.
+
 ## Folder structure
 
 ```
@@ -78,35 +102,59 @@ src/
   middleware/
     error-handler.ts                  # errorHandler — maps AppError -> HTTP response, last middleware mounted
     response-handler.ts               # responseHandler — attaches res.success(data, status?), mounted early
+    auth-middleware.ts                # createAuthMiddleware(jwtSecret) — verifies JWT, sets req.userId
+    validate-middleware.ts            # validateBody/validateParams/validateQuery — route-level zod validation
+  validation/
+    validate.ts                       # validate(schema, data) — zod safeParse -> ValidationError on failure (used by validate-middleware.ts, not called directly from controllers)
   types/
-    express.d.ts                      # module augmentation adding res.success to Express's Response
+    express.d.ts                      # module augmentation: res.success, req.userId on Express's types
   di/
     tokens.ts                         # TOKENS — Symbol per interface/config value used with @inject
     container.ts                      # configureContainer() — registers all interface tokens/values
   models/
     message.ts                        # Mongoose schema/model: MessageModel, MessageDocument
     user.ts                           # Mongoose schema/model: UserModel, UserDocument
+    chat-conversation.ts              # Mongoose schema/model: ChatConversationModel, ChatConversationDocument
   controllers/
-    auth-controller.ts                # AuthController — HTTP layer for /auth routes
+    schemas/
+      common.schema.ts                # objectIdSchema — shared Mongo id validator
+      auth.schema.ts                  # signupSchema, loginSchema
+      conversation.schema.ts          # createConversationSchema, updateConversationSchema, conversationIdParamSchema
+      message.schema.ts               # listMessagesQuerySchema
+      chat.schema.ts                  # chatSchema (used directly in index.ts's /chat handler)
+    require-user-id.ts                # requireUserId(req) — reads req.userId, throws UnauthorizedError if absent
+    auth-controller.ts                # AuthController — HTTP layer for /auth routes (public, no authMiddleware)
+    conversation-controller.ts        # ConversationController — /conversations CRUD, behind authMiddleware
+    message-controller.ts             # MessageController — GET /messages, behind authMiddleware
   routes/
     auth-routes.ts                    # createAuthRouter(authController) -> Router
+    conversation-routes.ts            # createConversationRouter(conversationController) -> Router
+    message-routes.ts                 # createMessageRouter(messageController) -> Router
   services/
     interfaces/
       chat-service.interface.ts       # ChatServiceInterface
-      conversation-service.interface.ts  # ConversationServiceInterface, ChatMessage
+      conversation-service.interface.ts  # ConversationServiceInterface, ChatMessage (message-history logic, keyed by customerId)
       auth-service.interface.ts       # AuthServiceInterface, AuthUser, AuthResult
+      chat-conversation-service.interface.ts  # ChatConversationServiceInterface, ConversationSummary (persisted conversation entity)
+      message-service.interface.ts    # MessageServiceInterface, MessageSummary
     chat-service.ts                   # ChatService implements ChatServiceInterface
     conversation-service.ts           # ConversationService implements ConversationServiceInterface
     auth-service.ts                   # AuthService implements AuthServiceInterface (bcrypt + jwt)
+    chat-conversation-service.ts      # ChatConversationService implements ChatConversationServiceInterface
+    message-service.ts                # MessageService implements MessageServiceInterface
     model-provider.ts                 # ModelProvider (static ChatOpenRouter cache/factory)
     db.ts                             # connectToDatabase() — cached Mongoose connection
   repositories/
     interfaces/
       message-repository.interface.ts # MessageRepositoryInterface
       user-repository.interface.ts    # UserRepositoryInterface
+      chat-conversation-repository.interface.ts  # ChatConversationRepositoryInterface, CreateChatConversationInput
     message-repository.ts             # MessageRepository implements MessageRepositoryInterface
     user-repository.ts                # UserRepository implements UserRepositoryInterface
+    chat-conversation-repository.ts   # ChatConversationRepository implements ChatConversationRepositoryInterface
 ```
+
+**Naming note**: the persisted `userId` + `name` conversation entity is named `ChatConversation*` throughout (model/repository/service), *not* `Conversation*` — that name was already taken by the pre-existing `ConversationService`/`ConversationServiceInterface`, which is unrelated message-history-loading logic for `ChatService` (keyed by `customerId`, not the same thing as a `ChatConversation` document). The HTTP-facing `ConversationController`/`conversation-routes.ts` names are fine since no controller/route previously used that name.
 
 Each layer (`services/`, `repositories/`) owns its own `interfaces/` subfolder — interfaces live next to the layer they belong to, not in one shared top-level folder.
 
@@ -119,6 +167,8 @@ Each layer (`services/`, `repositories/`) owns its own `interfaces/` subfolder �
   - `chat-service.ts` — `ChatService` is constructed with a model name and a `ConversationServiceInterface` (dependency injection, not a singleton). `chat()` loads prior history, invokes the model, persists both the user message and the reply.
   - `conversation-service.ts` — `ConversationService` is constructed with a `MessageRepositoryInterface`; contains no direct Mongoose/DB calls itself — it only maps between `ChatMessage` (domain shape) and whatever the repository returns.
   - `auth-service.ts` — `AuthService` is constructed with a `UserRepositoryInterface`, the JWT secret, and an optional expiry. `signup()` rejects duplicate emails and hashes the password with bcrypt; `login()` verifies the hash; both return `{ user, token }` with a signed JWT.
+  - `chat-conversation-service.ts` — `ChatConversationService` is constructed with a `ChatConversationRepositoryInterface`. `renameConversation`/`deleteConversation`/`getConversation` all go through a private `getOwnedConversation(id, userId)` first, throwing `NotFoundError` (not `UnauthorizedError`) if the conversation doesn't exist or isn't owned by that user — avoids confirming a conversation id exists to a non-owner.
+  - `message-service.ts` — `MessageService` is constructed with a `MessageRepositoryInterface`; `listMessages(conversationId)` maps raw documents to `MessageSummary`. Ownership verification (does this conversation belong to the caller) happens one layer up, in `MessageController`, via `ChatConversationService.getConversation` — not duplicated here.
   - `db.ts` — `connectToDatabase()` lazily creates and caches a single Mongoose connection promise (the promise itself is cached, not the resolved value, so concurrent early callers share one in-flight connection).
 
 ## Development practices

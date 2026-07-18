@@ -2,29 +2,21 @@ import type { Request, Response } from "express";
 import { inject, injectable } from "tsyringe";
 import type { AuthServiceInterface } from "../services/interfaces/auth-service.interface.js";
 import { TOKENS } from "../di/tokens.js";
-import { ValidationError } from "../errors/index.js";
+import type { LoginInput, SignupInput } from "./schemas/auth.schema.js";
 
 @injectable()
 export class AuthController {
   constructor(@inject(TOKENS.AuthService) private readonly authService: AuthServiceInterface) {}
 
   signup = async (req: Request, res: Response): Promise<void> => {
-    const { name, email, password } = req.body ?? {};
-
-    if (typeof name !== "string" || typeof email !== "string" || typeof password !== "string") {
-      throw new ValidationError("name, email and password are required strings");
-    }
+    const { name, email, password } = req.body as SignupInput;
 
     const result = await this.authService.signup(name, email, password);
     res.success(result, 201);
   };
 
   login = async (req: Request, res: Response): Promise<void> => {
-    const { email, password } = req.body ?? {};
-
-    if (typeof email !== "string" || typeof password !== "string") {
-      throw new ValidationError("email and password are required strings");
-    }
+    const { email, password } = req.body as LoginInput;
 
     const result = await this.authService.login(email, password);
     res.success(result);

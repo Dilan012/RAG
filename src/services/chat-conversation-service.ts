@@ -35,6 +35,11 @@ export class ChatConversationService implements ChatConversationServiceInterface
     return conversations.map(toSummary);
   }
 
+  async getConversation(id: string, userId: string): Promise<ConversationSummary> {
+    const conversation = await this.getOwnedConversation(id, userId);
+    return toSummary(conversation);
+  }
+
   async renameConversation(id: string, userId: string, name: string): Promise<ConversationSummary> {
     await this.getOwnedConversation(id, userId);
     const updated = await this.conversationRepository.updateName(id, name);
