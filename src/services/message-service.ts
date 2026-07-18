@@ -7,13 +7,13 @@ import { TOKENS } from "../di/tokens.js";
 export class MessageService implements MessageServiceInterface {
   constructor(@inject(TOKENS.MessageRepository) private readonly messageRepository: MessageRepositoryInterface) {}
 
-  async listMessages(conversationId: string): Promise<MessageSummary[]> {
-    const messages = await this.messageRepository.findByConversationId(conversationId);
+  async listMessages(conversationId: string, userId: string): Promise<MessageSummary[]> {
+    const messages = await this.messageRepository.findByConversationId(conversationId, userId);
 
     return messages.map((message) => ({
       id: message._id.toString(),
       conversationId: message.conversationId ? message.conversationId.toString() : null,
-      customerId: message.customerId,
+      userId: message.userId,
       role: message.role,
       content: message.content,
       createdAt: message.createdAt,

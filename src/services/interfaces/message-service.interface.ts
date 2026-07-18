@@ -1,12 +1,12 @@
 export interface MessageSummary {
   id: string;
   conversationId: string | null;
-  customerId: string;
+  userId: string;
   role: "user" | "assistant";
   content: string;
   createdAt: Date;
 }
 
 export interface MessageServiceInterface {
-  listMessages(conversationId: string): Promise<MessageSummary[]>;
+  listMessages(conversationId: string, userId: string): Promise<MessageSummary[]>;
 }

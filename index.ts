@@ -43,9 +43,9 @@ app.use("/messages", createMessageRouter(messageController, authMiddleware));
 
 app.post("/chat", authMiddleware, validateBody(chatSchema), async (req: Request, res: Response) => {
   const userId = requireUserId(req);
-  const { message } = req.body as ChatDto;
+  const { message, conversationId } = req.body as ChatDto;
 
-  const reply = await chatService.chat(userId, message);
+  const reply = await chatService.chat(userId, message, conversationId);
   res.success({ reply });
 });
 

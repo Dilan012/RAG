@@ -1,3 +1,3 @@
 export interface ChatServiceInterface {
-  chat(customerId: string, userMessage: string, systemPrompt?: string): Promise<string>;
+  chat(userId: string, userMessage: string, conversationId?: string, systemPrompt?: string): Promise<string>;
 }

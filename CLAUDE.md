@@ -67,7 +67,7 @@ Every JSON response — success or error — has the same top-level shape, so th
 2. Verifies the token with `jsonwebtoken` against `jwtSecret` — throws `UnauthorizedError` if invalid/expired.
 3. Reads the `sub` claim (the user id — `AuthService` signs tokens with `{ sub: id, email }`) and sets `req.userId`.
 
-Get the secret via `container.resolve<string>(TOKENS.JwtSecret)` in `index.ts`, then pass the middleware instance into each router factory that needs it: `createConversationRouter(controller, authMiddleware)`. **Applied per-route inside the router factory** (`router.get("/", authMiddleware, controller.list)` etc.), not once at the `app.use(path, authMiddleware, router)` level — mounting it at the router-group level would make it all-or-nothing for every path under that prefix, with no way for a future route on the same router (e.g. a public preview endpoint) to opt out. `/chat` (a plain inline handler, not a router) is mounted the same way, directly on its one route: `app.post("/chat", authMiddleware, validateBody(chatSchema), handler)`. Only `/auth` is intentionally NOT behind it — it's how you get a token in the first place. `/chat` derives its `customerId` from `requireUserId(req)`, not from the request body — `chatSchema` no longer accepts a `customerId` field at all.
+Get the secret via `container.resolve<string>(TOKENS.JwtSecret)` in `index.ts`, then pass the middleware instance into each router factory that needs it: `createConversationRouter(controller, authMiddleware)`. **Applied per-route inside the router factory** (`router.get("/", authMiddleware, controller.list)` etc.), not once at the `app.use(path, authMiddleware, router)` level — mounting it at the router-group level would make it all-or-nothing for every path under that prefix, with no way for a future route on the same router (e.g. a public preview endpoint) to opt out. `/chat` (a plain inline handler, not a router) is mounted the same way, directly on its one route: `app.post("/chat", authMiddleware, validateBody(chatSchema), handler)`. Only `/auth` is intentionally NOT behind it — it's how you get a token in the first place. `/chat` derives its `userId` from `requireUserId(req)`, not from the request body — `chatSchema` never accepted a `userId`/`customerId` field.
 
 `req.userId` is typed via the same module augmentation file as `res.success` — `src/types/express.d.ts` — augmenting `express-serve-static-core`.
 
@@ -133,7 +133,7 @@ src/
   services/
     interfaces/
       chat-service.interface.ts       # ChatServiceInterface
-      conversation-service.interface.ts  # ConversationServiceInterface, ChatMessage (message-history logic, keyed by customerId)
+      conversation-service.interface.ts  # ConversationServiceInterface, ChatMessage (message-history logic, keyed by userId)
       auth-service.interface.ts       # AuthServiceInterface, AuthUser, AuthResult
       chat-conversation-service.interface.ts  # ChatConversationServiceInterface, ConversationSummary (persisted conversation entity)
       message-service.interface.ts    # MessageServiceInterface, MessageSummary
@@ -154,7 +154,7 @@ src/
     chat-conversation-repository.ts   # ChatConversationRepository implements ChatConversationRepositoryInterface
 ```
 
-**Naming note**: the persisted `userId` + `name` conversation entity is named `ChatConversation*` throughout (model/repository/service), *not* `Conversation*` — that name was already taken by the pre-existing `ConversationService`/`ConversationServiceInterface`, which is unrelated message-history-loading logic for `ChatService` (keyed by `customerId`, not the same thing as a `ChatConversation` document). The HTTP-facing `ConversationController`/`conversation-routes.ts` names are fine since no controller/route previously used that name.
+**Naming note**: the persisted `userId` + `name` conversation entity is named `ChatConversation*` throughout (model/repository/service), *not* `Conversation*` — that name was already taken by the pre-existing `ConversationService`/`ConversationServiceInterface`, which is unrelated message-history-loading logic for `ChatService` (keyed by `userId`, not the same thing as a `ChatConversation` document). The HTTP-facing `ConversationController`/`conversation-routes.ts` names are fine since no controller/route previously used that name.
 
 Each layer (`services/`, `repositories/`) owns its own `interfaces/` subfolder — interfaces live next to the layer they belong to, not in one shared top-level folder.
 
@@ -168,7 +168,7 @@ Each layer (`services/`, `repositories/`) owns its own `interfaces/` subfolder �
   - `conversation-service.ts` — `ConversationService` is constructed with a `MessageRepositoryInterface`; contains no direct Mongoose/DB calls itself — it only maps between `ChatMessage` (domain shape) and whatever the repository returns.
   - `auth-service.ts` — `AuthService` is constructed with a `UserRepositoryInterface`, the JWT secret, and an optional expiry. `signup()` rejects duplicate emails and hashes the password with bcrypt; `login()` verifies the hash; both return `{ user, token }` with a signed JWT.
   - `chat-conversation-service.ts` — `ChatConversationService` is constructed with a `ChatConversationRepositoryInterface`. `renameConversation`/`deleteConversation`/`getConversation` all go through a private `getOwnedConversation(id, userId)` first, throwing `NotFoundError` (not `UnauthorizedError`) if the conversation doesn't exist or isn't owned by that user — avoids confirming a conversation id exists to a non-owner.
-  - `message-service.ts` — `MessageService` is constructed with a `MessageRepositoryInterface`; `listMessages(conversationId)` maps raw documents to `MessageSummary`. Ownership verification (does this conversation belong to the caller) happens one layer up, in `MessageController`, via `ChatConversationService.getConversation` — not duplicated here.
+  - `message-service.ts` — `MessageService` is constructed with a `MessageRepositoryInterface`; `listMessages(conversationId, userId)` maps raw documents to `MessageSummary`. Two independent layers enforce that a user can only ever see their own messages: `MessageController` checks conversation ownership via `ChatConversationService.getConversation` *before* calling this, **and** `MessageRepository.findByConversationId(conversationId, userId)` filters by `userId` at the database query itself — so even a bug that skipped the ownership check, or a future caller of the repository that forgets it, still can't leak another user's messages. Always pass `userId` all the way to the repository query for anything message-related; never filter by `conversationId` alone.
   - `db.ts` — `connectToDatabase()` lazily creates and caches a single Mongoose connection promise (the promise itself is cached, not the resolved value, so concurrent early callers share one in-flight connection).
 
 ## Development practices

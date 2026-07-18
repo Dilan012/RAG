@@ -13,12 +13,13 @@ export class ChatService implements ChatServiceInterface {
   ) {}
 
   async chat(
-    customerId: string,
+    userId: string,
     userMessage: string,
+    conversationId?: string,
     systemPrompt?: string
   ): Promise<string> {
     const model = ModelProvider.getModel(this.modelName);
-    const history = await this.conversationStore.getHistory(customerId);
+    const history = await this.conversationStore.getHistory(userId, conversationId);
 
     const messages: BaseMessageLike[] = [];
     if (systemPrompt) {
@@ -32,14 +33,12 @@ export class ChatService implements ChatServiceInterface {
     const response = await model.invoke(messages);
     const replyContent = String(response.content);
 
-    await this.conversationStore.appendMessage(customerId, {
-      role: "user",
-      content: userMessage,
-    });
-    await this.conversationStore.appendMessage(customerId, {
-      role: "assistant",
-      content: replyContent,
-    });
+    await this.conversationStore.appendMessage(userId, { role: "user", content: userMessage }, conversationId);
+    await this.conversationStore.appendMessage(
+      userId,
+      { role: "assistant", content: replyContent },
+      conversationId
+    );
 
     return replyContent;
   }

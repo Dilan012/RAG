@@ -22,7 +22,7 @@ export class MessageController {
     // Confirms the conversation exists and belongs to the caller before returning its messages.
     await this.conversationService.getConversation(conversationId, userId);
 
-    const messages = await this.messageService.listMessages(conversationId);
+    const messages = await this.messageService.listMessages(conversationId, userId);
     res.success(messages);
   };
 }

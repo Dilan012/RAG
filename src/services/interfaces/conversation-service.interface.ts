@@ -4,7 +4,6 @@ export interface ChatMessage {
 }
 
 export interface ConversationServiceInterface {
-  getHistory(customerId: string): Promise<ChatMessage[]>;
-  appendMessage(customerId: string, message: ChatMessage): Promise<void>;
+  getHistory(userId: string, conversationId?: string): Promise<ChatMessage[]>;
+  appendMessage(userId: string, message: ChatMessage, conversationId?: string): Promise<void>;
 }
- 

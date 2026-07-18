@@ -9,8 +9,10 @@ export class ConversationService implements ConversationServiceInterface {
     @inject(TOKENS.MessageRepository) private readonly messageRepository: MessageRepositoryInterface
   ) {}
 
-  async getHistory(customerId: string): Promise<ChatMessage[]> {
-    const messages = await this.messageRepository.findByCustomerId(customerId);
+  async getHistory(userId: string, conversationId?: string): Promise<ChatMessage[]> {
+    const messages = conversationId
+      ? await this.messageRepository.findByConversationId(conversationId, userId)
+      : await this.messageRepository.findByUserId(userId);
 
     return messages.map((message) => ({
       role: message.role,
@@ -18,9 +20,10 @@ export class ConversationService implements ConversationServiceInterface {
     }));
   }
 
-  async appendMessage(customerId: string, message: ChatMessage): Promise<void> {
+  async appendMessage(userId: string, message: ChatMessage, conversationId?: string): Promise<void> {
     await this.messageRepository.create({
-      customerId,
+      userId,
+      ...(conversationId ? { conversationId } : {}),
       role: message.role,
       content: message.content,
     });

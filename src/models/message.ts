@@ -2,7 +2,7 @@ import { Schema, model, Types } from "mongoose";
 
 export interface MessageDocument {
   _id: Types.ObjectId;
-  customerId: string;
+  userId: string;
   conversationId?: Types.ObjectId;
   role: "user" | "assistant";
   content: string;
@@ -10,7 +10,7 @@ export interface MessageDocument {
 }
 
 const messageSchema = new Schema<MessageDocument>({
-  customerId: { type: String, required: true, index: true },
+  userId: { type: String, required: true, index: true },
   conversationId: { type: Schema.Types.ObjectId, ref: "ChatConversation", index: true },
   role: { type: String, enum: ["user", "assistant"], required: true },
   content: { type: String, required: true },
