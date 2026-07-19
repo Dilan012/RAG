@@ -35,7 +35,7 @@ export class ChatMemoryService implements ChatMemoryServiceInterface {
     const recentMessages = await this.messageRepository.findByConversationIdSince(
       conversationId,
       userId,
-      summary?.createdAt
+      summary?.updatedAt
     );
 
     const history: ChatMessage[] = [];
@@ -70,7 +70,7 @@ export class ChatMemoryService implements ChatMemoryServiceInterface {
     const unsummarizedCount = await this.messageRepository.countByConversationIdSince(
       conversationId,
       userId,
-      summary?.createdAt
+      summary?.updatedAt
     );
 
     if (unsummarizedCount < SUMMARIZATION_MESSAGE_COUNT) {
@@ -80,7 +80,7 @@ export class ChatMemoryService implements ChatMemoryServiceInterface {
     const unsummarizedMessages = await this.messageRepository.findByConversationIdSince(
       conversationId,
       userId,
-      summary?.createdAt
+      summary?.updatedAt
     );
 
     await this.summaryService.summarizeConversation(conversationId, userId, unsummarizedMessages.map(toChatMessage));

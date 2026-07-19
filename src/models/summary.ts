@@ -6,13 +6,16 @@ export interface SummaryDocument {
   userId: string;
   content: string;
   createdAt: Date;
+  updatedAt: Date;
 }
 
-const summarySchema = new Schema<SummaryDocument>({
-  conversationId: { type: Schema.Types.ObjectId, ref: "Conversation", required: true, index: true },
-  userId: { type: String, required: true, index: true },
-  content: { type: String, required: true },
-  createdAt: { type: Date, default: Date.now },
-});
+const summarySchema = new Schema<SummaryDocument>(
+  {
+    conversationId: { type: Schema.Types.ObjectId, ref: "Conversation", required: true, index: true },
+    userId: { type: String, required: true, index: true },
+    content: { type: String, required: true },
+  },
+  { timestamps: true }
+);
 
 export const SummaryModel = model<SummaryDocument>("Summary", summarySchema);
