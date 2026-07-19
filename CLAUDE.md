@@ -20,6 +20,8 @@ Requires a `.env` file (loaded via `dotenv` in `index.ts`) with:
 - `JWT_SECRET` — required; used by `AuthService` to sign/verify login tokens
 - `PORT` — optional, defaults to 3000
 
+`EmbeddingService.ingest()` writes uploaded/ingested files to `<project root>/uploads/` (created automatically, not configurable via env var yet). Ignored by git — never commit anything that lands there.
+
 ## Architecture
 
 This is an Express + LangChain + MongoDB chat backend with a `/chat` endpoint (e.g. for a WhatsApp-style customer chat integration) and `/auth` signup/login endpoints. Entry point is `index.ts` at the repo root (not under `src/`).
@@ -83,6 +85,7 @@ Validation happens in the **route**, as middleware — not inside the controller
 - In the route: `router.post("/", validateBody(createXSchema), controller.create)` (chain as many `validate*` middlewares as the route needs, before the controller method).
 - In the controller: `const { field } = req.body as XDto;` (or `req.params as XParamDto` / `req.query as unknown as XQueryDto` for query, per the getter caveat above) — a type assertion, not re-validation. The assertion is safe *because* the route already validated; a controller method reached without its route's `validate*` middleware would silently trust unvalidated data, so never skip wiring the middleware when adding a route.
 - **Documented exception**: `EmbeddingController.ingest` (`POST /embeddings/ingest`) accepts *either* a multipart file upload *or* a JSON `{ text }` body on the same route — which input arrives isn't known until after `multer` has run, so there's no single request shape a route-level `validate*` middleware could check beforehand. When `req.file` is absent, the controller calls `validate(ingestTextSchema, req.body)` (`src/dtos/embedding.dto.ts`) itself — the *only* controller allowed to call `validate()` directly. Still zod-backed (validates presence + a 200,000-character cap), just invoked from the wrong layer out of necessity. Don't copy this pattern for a route that has one predictable body shape.
+  - Both paths converge on the same shape before reaching the service: a file already saved to disk. `multer`'s `diskStorage` (see `embedding-routes.ts`) writes an uploaded file straight to `UPLOADS_DIR` and the controller just forwards `req.file.path`; for the text path, the controller calls `saveTextToDisk(text)` (`src/utils/save-text-to-disk.ts`) itself to write the text out the same way. `EmbeddingService.ingest()` never touches the filesystem — it only ever receives a `filePath` that's guaranteed to already exist.
 - **When adding a new endpoint**: write its zod schema + exported `<Thing>Dto` type in `src/dtos/`, wire `validateBody`/`validateParams`/`validateQuery` into the route, then read `req.body`/`req.params`/`req.query` in the controller with the DTO cast. Don't reintroduce manual `typeof x !== "string"` checks, don't call `isValidObjectId` ad hoc outside a schema, and don't call `validate(...)` directly from a controller.
 
 ## Folder structure
@@ -116,6 +119,9 @@ src/
     embedding.dto.ts                  # ingestTextSchema, IngestTextDto — used directly in EmbeddingController (see Input validation exception)
   types/
     express.d.ts                      # module augmentation: res.success, req.userId on Express's types
+  utils/
+    uploads-dir.ts                    # UPLOADS_DIR, sanitizeFileName(fileName) — shared by embedding-routes.ts and save-text-to-disk.ts
+    save-text-to-disk.ts               # saveTextToDisk(text, fileName?) -> filePath — the text-input equivalent of multer's diskStorage
   di/
     tokens.ts                         # TOKENS — Symbol per interface/config value used with @inject
     container.ts                      # configureContainer() — registers all interface tokens/values
@@ -134,7 +140,7 @@ src/
     auth-routes.ts                    # createAuthRouter(authController) -> Router
     conversation-routes.ts            # createConversationRouter(conversationController) -> Router
     message-routes.ts                 # createMessageRouter(messageController) -> Router
-    embedding-routes.ts               # createEmbeddingRouter(embeddingController) -> Router; multer memoryStorage, 10MB file size limit (MAX_FILE_SIZE_BYTES), MulterError mapped to ValidationError
+    embedding-routes.ts               # createEmbeddingRouter(embeddingController) -> Router; multer diskStorage writes straight to UPLOADS_DIR, 10MB file size limit (MAX_FILE_SIZE_BYTES), MulterError mapped to ValidationError
   services/
     interfaces/
       chat-service.interface.ts       # ChatServiceInterface
@@ -150,7 +156,7 @@ src/
     conversation-service.ts            # ConversationService implements ConversationServiceInterface
     message-service.ts                # MessageService implements MessageServiceInterface
     summary-service.ts                # SummaryService implements SummaryServiceInterface (LLM summarization)
-    embedding-service.ts              # EmbeddingService implements EmbeddingServiceInterface — stub, awaiting implementation
+    embedding-service.ts              # EmbeddingService implements EmbeddingServiceInterface — no disk I/O here at all; ingest()/embed() are stubs awaiting implementation, operating on an already-saved source.filePath
     model-provider.ts                 # ModelProvider (static ChatOpenRouter cache/factory)
     db.ts                             # connectToDatabase() — cached Mongoose connection
   repositories/

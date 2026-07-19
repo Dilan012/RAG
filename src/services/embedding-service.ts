@@ -11,6 +11,8 @@ export class EmbeddingService implements EmbeddingServiceInterface {
   }
 
   async ingest(source: IngestSource): Promise<void> {
+    // TODO: read source.filePath, chunk the content, generate embeddings (via embed()),
+    // and persist them. The file itself is already saved on disk by this point.
     throw new Error("EmbeddingService.ingest is not implemented yet");
   }
 }

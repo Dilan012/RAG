@@ -1,13 +1,28 @@
 import { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import multer, { MulterError } from "multer";
+import { randomUUID } from "node:crypto";
+import { mkdir } from "node:fs/promises";
 import type { EmbeddingController } from "../controllers/embedding-controller.js";
 import { ValidationError } from "../errors/index.js";
+import { UPLOADS_DIR, sanitizeFileName } from "../utils/uploads-dir.js";
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
-// Memory storage — files never touch disk, req.file.buffer is handed straight to the service.
+// Disk storage — multer writes the upload straight to UPLOADS_DIR itself; the controller
+// only ever sees the resulting req.file.path, never a buffer.
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    mkdir(UPLOADS_DIR, { recursive: true })
+      .then(() => cb(null, UPLOADS_DIR))
+      .catch((err: unknown) => cb(err as Error, UPLOADS_DIR));
+  },
+  filename: (_req, file, cb) => {
+    cb(null, `${randomUUID()}-${sanitizeFileName(file.originalname)}`);
+  },
+});
+
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage,
   limits: { fileSize: MAX_FILE_SIZE_BYTES },
 });
 

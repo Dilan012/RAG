@@ -1,5 +1,5 @@
 export interface IngestSource {
-  buffer: Buffer;
+  filePath: string;
   fileName: string;
   mimeType: string;
   userId: string;
