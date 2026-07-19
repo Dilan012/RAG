@@ -82,6 +82,7 @@ Validation happens in the **route**, as middleware — not inside the controller
 - `src/dtos/<resource>.dto.ts` — one file per resource. Each file exports the zod schema(s) (variable name suffixed `Schema`, e.g. `signupSchema`) plus the corresponding **DTO** — the inferred TypeScript type the controller casts to, named `<Thing>Dto` (`export type SignupDto = z.infer<typeof signupSchema>`). `common.dto.ts` holds `objectIdSchema` (a `z.string().refine(isValidObjectId, ...)`) shared by every resource that validates a Mongo id from a param/query. This is its own top-level layer (like `errors/`, `middleware/`), not nested under `controllers/` — both routes (which consume the schemas) and controllers (which consume the DTO types) import from it.
 - In the route: `router.post("/", validateBody(createXSchema), controller.create)` (chain as many `validate*` middlewares as the route needs, before the controller method).
 - In the controller: `const { field } = req.body as XDto;` (or `req.params as XParamDto` / `req.query as unknown as XQueryDto` for query, per the getter caveat above) — a type assertion, not re-validation. The assertion is safe *because* the route already validated; a controller method reached without its route's `validate*` middleware would silently trust unvalidated data, so never skip wiring the middleware when adding a route.
+- **Documented exception**: `EmbeddingController.ingest` (`POST /embeddings/ingest`) accepts *either* a multipart file upload *or* a JSON `{ text }` body on the same route — which input arrives isn't known until after `multer` has run, so there's no single request shape a route-level `validate*` middleware could check beforehand. When `req.file` is absent, the controller calls `validate(ingestTextSchema, req.body)` (`src/dtos/embedding.dto.ts`) itself — the *only* controller allowed to call `validate()` directly. Still zod-backed (validates presence + a 200,000-character cap), just invoked from the wrong layer out of necessity. Don't copy this pattern for a route that has one predictable body shape.
 - **When adding a new endpoint**: write its zod schema + exported `<Thing>Dto` type in `src/dtos/`, wire `validateBody`/`validateParams`/`validateQuery` into the route, then read `req.body`/`req.params`/`req.query` in the controller with the DTO cast. Don't reintroduce manual `typeof x !== "string"` checks, don't call `isValidObjectId` ad hoc outside a schema, and don't call `validate(...)` directly from a controller.
 
 ## Folder structure
@@ -112,6 +113,7 @@ src/
     conversation.dto.ts               # create/update/idParam schemas + CreateConversationDto, UpdateConversationDto, ConversationIdParamDto
     message.dto.ts                    # listMessagesQuerySchema, ListMessagesQueryDto
     chat.dto.ts                       # chatSchema, ChatDto (used directly in index.ts's /chat handler)
+    embedding.dto.ts                  # ingestTextSchema, IngestTextDto — used directly in EmbeddingController (see Input validation exception)
   types/
     express.d.ts                      # module augmentation: res.success, req.userId on Express's types
   di/
@@ -127,10 +129,12 @@ src/
     auth-controller.ts                # AuthController — HTTP layer for /auth routes (public, no authMiddleware)
     conversation-controller.ts        # ConversationController — /conversations CRUD, behind authMiddleware
     message-controller.ts             # MessageController — GET /messages, behind authMiddleware
+    embedding-controller.ts           # EmbeddingController — POST /embeddings/ingest, behind authMiddleware (file-or-text exception, see Input validation)
   routes/
     auth-routes.ts                    # createAuthRouter(authController) -> Router
     conversation-routes.ts            # createConversationRouter(conversationController) -> Router
     message-routes.ts                 # createMessageRouter(messageController) -> Router
+    embedding-routes.ts               # createEmbeddingRouter(embeddingController) -> Router; multer memoryStorage, 10MB file size limit (MAX_FILE_SIZE_BYTES), MulterError mapped to ValidationError
   services/
     interfaces/
       chat-service.interface.ts       # ChatServiceInterface
@@ -139,12 +143,14 @@ src/
       conversation-service.interface.ts  # ConversationServiceInterface, ConversationSummary (persisted conversation entity — CRUD, not LLM memory)
       message-service.interface.ts    # MessageServiceInterface, MessageSummary
       summary-service.interface.ts    # SummaryServiceInterface, SummaryRecord
+      embedding-service.interface.ts  # EmbeddingServiceInterface, IngestSource — embed()/ingest() both currently stubs, not implemented yet
     chat-service.ts                   # ChatService implements ChatServiceInterface
     chat-memory-service.ts             # ChatMemoryService implements ChatMemoryServiceInterface
     auth-service.ts                   # AuthService implements AuthServiceInterface (bcrypt + jwt)
     conversation-service.ts            # ConversationService implements ConversationServiceInterface
     message-service.ts                # MessageService implements MessageServiceInterface
     summary-service.ts                # SummaryService implements SummaryServiceInterface (LLM summarization)
+    embedding-service.ts              # EmbeddingService implements EmbeddingServiceInterface — stub, awaiting implementation
     model-provider.ts                 # ModelProvider (static ChatOpenRouter cache/factory)
     db.ts                             # connectToDatabase() — cached Mongoose connection
   repositories/

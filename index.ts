@@ -14,6 +14,8 @@ import { ConversationController } from "./src/controllers/conversation-controlle
 import { createConversationRouter } from "./src/routes/conversation-routes.js";
 import { MessageController } from "./src/controllers/message-controller.js";
 import { createMessageRouter } from "./src/routes/message-routes.js";
+import { EmbeddingController } from "./src/controllers/embedding-controller.js";
+import { createEmbeddingRouter } from "./src/routes/embedding-routes.js";
 import { errorHandler } from "./src/middleware/error-handler.js";
 import { responseHandler } from "./src/middleware/response-handler.js";
 import { createAuthMiddleware } from "./src/middleware/auth-middleware.js";
@@ -35,11 +37,13 @@ const chatService = container.resolve(ChatService);
 const authController = container.resolve(AuthController);
 const conversationController = container.resolve(ConversationController);
 const messageController = container.resolve(MessageController);
+const embeddingController = container.resolve(EmbeddingController);
 const authMiddleware = createAuthMiddleware(container.resolve<string>(TOKENS.JwtSecret));
 
 app.use("/auth", createAuthRouter(authController));
 app.use("/conversations", createConversationRouter(conversationController, authMiddleware));
 app.use("/messages", createMessageRouter(messageController, authMiddleware));
+app.use("/embeddings", createEmbeddingRouter(embeddingController, authMiddleware));
 
 app.post("/chat", authMiddleware, validateBody(chatSchema), async (req: Request, res: Response) => {
   const userId = requireUserId(req);

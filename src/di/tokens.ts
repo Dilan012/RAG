@@ -8,6 +8,7 @@ export const TOKENS = {
   ConversationService: Symbol.for("ConversationServiceInterface"),
   MessageService: Symbol.for("MessageServiceInterface"),
   SummaryService: Symbol.for("SummaryServiceInterface"),
+  EmbeddingService: Symbol.for("EmbeddingServiceInterface"),
   ModelName: Symbol.for("SupportedModelName"),
   JwtSecret: Symbol.for("JwtSecret"),
 } as const;

@@ -10,6 +10,7 @@ import { AuthService } from "../services/auth-service.js";
 import { ConversationService } from "../services/conversation-service.js";
 import { MessageService } from "../services/message-service.js";
 import { SummaryService } from "../services/summary-service.js";
+import { EmbeddingService } from "../services/embedding-service.js";
 import type { SupportedModelName } from "../services/model-provider.js";
 
 export function configureContainer(): void {
@@ -22,6 +23,7 @@ export function configureContainer(): void {
   container.register(TOKENS.ConversationService, { useClass: ConversationService });
   container.register(TOKENS.MessageService, { useClass: MessageService });
   container.register(TOKENS.SummaryService, { useClass: SummaryService });
+  container.register(TOKENS.EmbeddingService, { useClass: EmbeddingService });
 
   const modelName: SupportedModelName = "gpt-4o-mini";
   container.register(TOKENS.ModelName, { useValue: modelName });
