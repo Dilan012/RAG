@@ -6,11 +6,7 @@ import type { SummaryRecord, SummaryServiceInterface } from "./interfaces/summar
 import type { SummaryDocument } from "../models/summary.js";
 import type { SummaryRepositoryInterface } from "../repositories/interfaces/summary-repository.interface.js";
 import { TOKENS } from "../di/tokens.js";
-
-const SUMMARY_SYSTEM_PROMPT =
-  "You summarize conversations between a user and an assistant. Write a concise summary " +
-  "that captures the key points, questions, and any decisions or conclusions reached. " +
-  "Do not include a preamble like 'Here is a summary' — just output the summary itself.";
+import { appConfig } from "../config/app-config.js";
 
 function toSummaryRecord(summary: SummaryDocument): SummaryRecord {
   return {
@@ -39,7 +35,7 @@ export class SummaryService implements SummaryServiceInterface {
     const model = ModelProvider.getModel(this.modelName);
     const transcript = messages.map((message) => `${message.role}: ${message.content}`).join("\n");
 
-    const prompt: BaseMessageLike[] = [{ role: "system", content: SUMMARY_SYSTEM_PROMPT }];
+    const prompt: BaseMessageLike[] = [{ role: "system", content: appConfig.summary.systemPrompt }];
     if (existingSummary) {
       prompt.push({
         role: "system",

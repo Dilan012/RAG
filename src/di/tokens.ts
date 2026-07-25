@@ -11,4 +11,7 @@ export const TOKENS = {
   EmbeddingService: Symbol.for("EmbeddingServiceInterface"),
   ModelName: Symbol.for("SupportedModelName"),
   JwtSecret: Symbol.for("JwtSecret"),
+  PineconeApiKey: Symbol.for("PineconeApiKey"),
+  PineconeIndexName: Symbol.for("PineconeIndexName"),
+  OpenRouterApiKey: Symbol.for("OpenRouterApiKey"),
 } as const;

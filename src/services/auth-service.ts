@@ -5,9 +5,7 @@ import type { UserRepositoryInterface } from "../repositories/interfaces/user-re
 import type { AuthResult, AuthServiceInterface } from "./interfaces/auth-service.interface.js";
 import { TOKENS } from "../di/tokens.js";
 import { EmailAlreadyExistsError, InvalidCredentialsError } from "../errors/index.js";
-
-const SALT_ROUNDS = 10;
-const JWT_EXPIRES_IN = "7d";
+import { appConfig } from "../config/app-config.js";
 
 @injectable()
 export class AuthService implements AuthServiceInterface {
@@ -23,7 +21,7 @@ export class AuthService implements AuthServiceInterface {
       throw new EmailAlreadyExistsError();
     }
 
-    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    const passwordHash = await bcrypt.hash(password, appConfig.auth.bcryptSaltRounds);
     const user = await this.userRepository.create({ name, email: normalizedEmail, passwordHash });
 
     return this.buildAuthResult(user._id.toString(), user.name, user.email);
@@ -45,7 +43,9 @@ export class AuthService implements AuthServiceInterface {
   }
 
   private buildAuthResult(id: string, name: string, email: string): AuthResult {
-    const token = jwt.sign({ sub: id, email }, this.jwtSecret, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
+    const token = jwt.sign({ sub: id, email }, this.jwtSecret, {
+      expiresIn: appConfig.auth.jwtExpiresIn,
+    } as jwt.SignOptions);
     return { user: { id, name, email }, token };
   }
 }

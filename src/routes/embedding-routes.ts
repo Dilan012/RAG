@@ -5,8 +5,7 @@ import { mkdir } from "node:fs/promises";
 import type { EmbeddingController } from "../controllers/embedding-controller.js";
 import { ValidationError } from "../errors/index.js";
 import { UPLOADS_DIR, sanitizeFileName } from "../utils/uploads-dir.js";
-
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+import { appConfig } from "../config/app-config.js";
 
 // Disk storage — multer writes the upload straight to UPLOADS_DIR itself; the controller
 // only ever sees the resulting req.file.path, never a buffer.
@@ -23,7 +22,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: MAX_FILE_SIZE_BYTES },
+  limits: { fileSize: appConfig.uploads.maxFileSizeBytes },
 });
 
 // multer surfaces a limit violation as a raw MulterError via next(err), not one of this
@@ -32,7 +31,11 @@ const upload = multer({
 function handleFileUpload(req: Request, res: Response, next: NextFunction): void {
   upload.single("file")(req, res, (err: unknown) => {
     if (err instanceof MulterError && err.code === "LIMIT_FILE_SIZE") {
-      next(new ValidationError(`File is too large — the maximum allowed size is ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB`));
+      next(
+        new ValidationError(
+          `File is too large — the maximum allowed size is ${appConfig.uploads.maxFileSizeBytes / (1024 * 1024)}MB`
+        )
+      );
       return;
     }
     next(err);

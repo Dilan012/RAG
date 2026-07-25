@@ -2,8 +2,7 @@ import { injectable } from "tsyringe";
 import { Types } from "mongoose";
 import { MessageModel, type MessageDocument } from "../models/message.js";
 import type { CreateMessageInput, MessageRepositoryInterface } from "./interfaces/message-repository.interface.js";
-
-const DEFAULT_MESSAGE_LIMIT = 50;
+import { appConfig } from "../config/app-config.js";
 
 function conversationSinceFilter(conversationId: string, userId: string, after?: Date) {
   return {
@@ -22,7 +21,7 @@ export class MessageRepository implements MessageRepositoryInterface {
   async findByConversationId(
     conversationId: string,
     userId: string,
-    limit: number = DEFAULT_MESSAGE_LIMIT
+    limit: number = appConfig.memory.defaultMessageLimit
   ): Promise<MessageDocument[]> {
     // Fetch the most recent `limit` messages, then reverse back to chronological
     // order — sorting descending first is what lets .limit() keep the latest

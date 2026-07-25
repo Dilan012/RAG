@@ -5,10 +5,7 @@ import type { SummaryRepositoryInterface } from "../repositories/interfaces/summ
 import type { SummaryServiceInterface } from "./interfaces/summary-service.interface.js";
 import type { MessageDocument } from "../models/message.js";
 import { TOKENS } from "../di/tokens.js";
-
-// Once a conversation accumulates this many messages since its last summary,
-// appendMessage() triggers a new summarization pass to fold them in.
-const SUMMARIZATION_MESSAGE_COUNT = 10;
+import { appConfig } from "../config/app-config.js";
 
 function toChatMessage(message: MessageDocument): ChatMessage {
   return {
@@ -73,7 +70,7 @@ export class ChatMemoryService implements ChatMemoryServiceInterface {
       summary?.updatedAt
     );
 
-    if (unsummarizedCount < SUMMARIZATION_MESSAGE_COUNT) {
+    if (unsummarizedCount < appConfig.memory.summarizationMessageThreshold) {
       return;
     }
 

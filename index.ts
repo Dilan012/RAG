@@ -23,8 +23,9 @@ import { validateBody } from "./src/middleware/validate-middleware.js";
 import { requireUserId } from "./src/controllers/require-user-id.js";
 import { chatSchema } from "./src/dtos/chat.dto.js";
 import type { ChatDto } from "./src/dtos/chat.dto.js";
+import { appConfig } from "./src/config/app-config.js";
 
-const PORT = process.env.PORT ?? 3000;
+const PORT = process.env.PORT ?? appConfig.server.defaultPort;
 
 configureContainer();
 

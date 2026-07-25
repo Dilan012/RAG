@@ -11,7 +11,7 @@ import { ConversationService } from "../services/conversation-service.js";
 import { MessageService } from "../services/message-service.js";
 import { SummaryService } from "../services/summary-service.js";
 import { EmbeddingService } from "../services/embedding-service.js";
-import type { SupportedModelName } from "../services/model-provider.js";
+import { appConfig } from "../config/app-config.js";
 
 export function configureContainer(): void {
   container.register(TOKENS.MessageRepository, { useClass: MessageRepository });
@@ -25,14 +25,31 @@ export function configureContainer(): void {
   container.register(TOKENS.SummaryService, { useClass: SummaryService });
   container.register(TOKENS.EmbeddingService, { useClass: EmbeddingService });
 
-  const modelName: SupportedModelName = "gpt-4o-mini";
-  container.register(TOKENS.ModelName, { useValue: modelName });
+  container.register(TOKENS.ModelName, { useValue: appConfig.chat.defaultModel });
 
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
     throw new Error("JWT_SECRET environment variable is required");
   }
   container.register(TOKENS.JwtSecret, { useValue: jwtSecret });
+
+  const pineconeApiKey = process.env.PINECONE_API_KEY;
+  if (!pineconeApiKey) {
+    throw new Error("PINECONE_API_KEY environment variable is required");
+  }
+  container.register(TOKENS.PineconeApiKey, { useValue: pineconeApiKey });
+
+  const pineconeIndexName = process.env.PINECONE_INDEX_NAME;
+  if (!pineconeIndexName) {
+    throw new Error("PINECONE_INDEX_NAME environment variable is required");
+  }
+  container.register(TOKENS.PineconeIndexName, { useValue: pineconeIndexName });
+
+  const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+  if (!openRouterApiKey) {
+    throw new Error("OPENROUTER_API_KEY environment variable is required");
+  }
+  container.register(TOKENS.OpenRouterApiKey, { useValue: openRouterApiKey });
 }
 
 export { container };
