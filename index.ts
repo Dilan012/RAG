@@ -44,19 +44,26 @@ const embeddingController = container.resolve(EmbeddingController);
 const gmailController = container.resolve(GmailController);
 const authMiddleware = createAuthMiddleware(container.resolve<string>(TOKENS.JwtSecret));
 
-app.use("/auth", createAuthRouter(authController));
-app.use("/conversations", createConversationRouter(conversationController, authMiddleware));
-app.use("/messages", createMessageRouter(messageController, authMiddleware));
-app.use("/embeddings", createEmbeddingRouter(embeddingController, authMiddleware));
-app.use("/integrations/gmail", createGmailRouter(gmailController, authMiddleware));
+// Every route is mounted under this one prefix so a reverse proxy can route
+// a single path (e.g. /api/*) to this service without touching individual
+// route paths here.
+const api = express.Router();
 
-app.post("/chat", authMiddleware, validateBody(chatSchema), async (req: Request, res: Response) => {
+api.use("/auth", createAuthRouter(authController));
+api.use("/conversations", createConversationRouter(conversationController, authMiddleware));
+api.use("/messages", createMessageRouter(messageController, authMiddleware));
+api.use("/embeddings", createEmbeddingRouter(embeddingController, authMiddleware));
+api.use("/integrations/gmail", createGmailRouter(gmailController, authMiddleware));
+
+api.post("/chat", authMiddleware, validateBody(chatSchema), async (req: Request, res: Response) => {
   const userId = requireUserId(req);
   const { message, conversationId } = req.body as ChatDto;
 
   const reply = await chatService.chat(userId, message, conversationId);
   res.success({ reply });
 });
+
+app.use(appConfig.server.apiPrefix, api);
 
 app.use(errorHandler);
 

@@ -12,6 +12,7 @@ import type { SupportedModelName } from "../services/model-provider.js";
 export const appConfig = {
   server: {
     defaultPort: 3000,
+    apiPrefix: "/api",
   },
 
   auth: {

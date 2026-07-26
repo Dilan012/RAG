@@ -39,6 +39,8 @@ Requires a `.env` file (loaded via `dotenv` in `index.ts`) with:
 
 This is an Express + LangChain + MongoDB chat backend with a `/chat` endpoint (e.g. for a WhatsApp-style customer chat integration) and `/auth` signup/login endpoints. Entry point is `index.ts` at the repo root (not under `src/`).
 
+Every route is mounted under a single prefix, `appConfig.server.apiPrefix` (`/api`), via one `express.Router()` (`const api = express.Router()`) in `index.ts` — so `/auth`, `/conversations`, `/messages`, `/embeddings`, `/integrations/gmail`, and `/chat` are all actually reachable at `/api/auth`, `/api/chat`, etc. This exists purely so a reverse proxy in front of this service can route on one path prefix without needing to enumerate every route. Route paths in this doc below are written relative to that router (e.g. "`/chat`" means `/api/chat`) — don't drop the prefix when constructing a real request or a Google OAuth redirect URI.
+
 Request flow (chat): `POST /chat` (`index.ts`, behind `authMiddleware`) → `chatService.chat(requireUserId(req), message)` → `EmbeddingService.similaritySearch()` (RAG retrieval from Pinecone, scoped to the user's own knowledge base) + `ChatMemoryService` (MongoDB history, keyed by the authenticated user's id) → `ModelProvider.getModel()` (LLM call, given retrieved context + history) → returns `{ reply }`.
 
 Request flow (auth): `POST /auth/signup` | `POST /auth/login` (`src/routes/auth-routes.ts`) → `AuthController` (validates body shape, maps errors to HTTP status) → `AuthService` (hashing/JWT/business rules) → `UserRepository` (Mongoose) → returns `{ user, token }`.

@@ -39,8 +39,8 @@ automated from this repo.
 1. **APIs & Services** → **Credentials** → **+ Create Credentials** → **OAuth client ID**
 2. Application type: **Web application**
 3. **Authorized redirect URIs** → add exactly the value you'll put in `GOOGLE_REDIRECT_URI`:
-   - Local dev: `http://localhost:3000/integrations/gmail/callback`
-   - Production: `https://<your-real-domain>/integrations/gmail/callback`
+   - Local dev: `http://localhost:3000/api/integrations/gmail/callback`
+   - Production: `https://<your-real-domain>/api/integrations/gmail/callback`
 
    This must match **exactly** (scheme, host, port, path) — Google rejects the callback
    otherwise.
@@ -51,7 +51,7 @@ automated from this repo.
 ```
 GOOGLE_CLIENT_ID = <the Client ID from step 4>
 GOOGLE_CLIENT_SECRET = <the Client Secret from step 4>
-GOOGLE_REDIRECT_URI = http://localhost:3000/integrations/gmail/callback
+GOOGLE_REDIRECT_URI = http://localhost:3000/api/integrations/gmail/callback
 TOKEN_ENCRYPTION_KEY = <any long random string — used to encrypt stored tokens at rest>
 FRONTEND_URL = http://localhost:5173
 ```
@@ -64,14 +64,14 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ## 6. Verify the flow works
 
 1. Start the backend (`npm run dev` in `RAG/`)
-2. As a logged-in user, call `GET /integrations/gmail/connect` (behind auth) — it
+2. As a logged-in user, call `GET /api/integrations/gmail/connect` (behind auth) — it
    returns `{ authUrl }`
 3. Open that URL in a browser, sign in with one of the **test users** from step 3,
    approve the consent screen
 4. Google redirects to `GOOGLE_REDIRECT_URI` with a `code` — the backend exchanges it,
    stores the connection, and redirects the browser to
    `${FRONTEND_URL}/knowledge-base?gmail=connected`
-5. `GET /integrations/gmail/status` (behind auth, same user) should now report
+5. `GET /api/integrations/gmail/status` (behind auth, same user) should now report
    `{ connected: true, googleEmail: "..." }`
 
 ## Notes / gotchas
