@@ -58,4 +58,20 @@ export const appConfig = {
   uploads: {
     maxFileSizeBytes: 10 * 1024 * 1024, // 10 MB
   },
+
+  gmail: {
+    // "Read + send" per the chosen scope — an agent tool using this connection can read,
+    // search, and send email as the connected user, but not delete/manage settings.
+    scopes: [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.send",
+      "https://www.googleapis.com/auth/userinfo.email",
+    ],
+    // How long a signed OAuth "state" value (carrying the userId through Google's
+    // redirect) stays valid — the whole connect -> consent -> callback round trip
+    // should take seconds, not minutes.
+    oauthStateExpiresIn: "10m",
+    mcpServerName: "gmail-mcp-server",
+    mcpServerVersion: "1.0.0",
+  },
 } as const;

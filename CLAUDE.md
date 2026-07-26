@@ -19,6 +19,9 @@ Requires a `.env` file (loaded via `dotenv` in `index.ts`) with:
 - `MONGODB_URI` — used by `src/services/db.ts` to connect via Mongoose
 - `JWT_SECRET` — required; used by `AuthService` to sign/verify login tokens
 - `PINECONE_API_KEY`, `PINECONE_INDEX_NAME` — required; used by `EmbeddingService` for vector storage/similarity search. The Pinecone index must already exist (created via the Pinecone dashboard/API, not by this app) with a dimension matching `appConfig.embedding.dimensions` (`1024`) and a compatible metric (cosine).
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` — required; used by `GmailOAuthService`/`GmailMcpService` for per-user Gmail OAuth. See `docs/gmail-oauth-setup.md` for how to create these in Google Cloud Console — this is a manual, external, one-time setup step, not something this app can automate.
+- `TOKEN_ENCRYPTION_KEY` — required; used by `src/utils/token-crypto.ts` to encrypt stored Gmail OAuth tokens at rest (AES-256-GCM). Generate with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` — this is **not** a Google value, it's local to this app.
+- `FRONTEND_URL` — optional, defaults to `http://localhost:5173`. Only used by `GmailController.callback` to redirect the user's browser back to the SPA after the Google OAuth round trip completes.
 - `PORT` — optional, defaults to `appConfig.server.defaultPort` (3000)
 
 `EmbeddingService.ingest()` writes uploaded/ingested files to `<project root>/uploads/` (created automatically, not configurable via env var yet). Ignored by git — never commit anything that lands there.
@@ -59,6 +62,7 @@ Request-context errors are thrown as typed `AppError` subclasses, never plain `E
 - `src/errors/index.ts` — barrel re-exporting everything above; import from `../errors/index.js`, not individual files.
 - `src/middleware/error-handler.ts` — `errorHandler`, the last middleware mounted in `index.ts`. `AppError` instances map to their own `statusCode`/`code`/`message`; anything else is logged and collapsed to a generic `INTERNAL_ERROR` 500 (never leaks internal error details to the client).
 - **When adding a new failure case**: add an entry to `ERROR_CODES` (both backend and frontend copies), add a subclass in `src/errors/`, export it from `src/errors/index.ts`, then `throw` it directly from the service/controller — don't catch it locally just to translate it into a manual `res.status(...).json(...)` call.
+- **Documented exception**: `GmailController.callback` (`GET /integrations/gmail/callback`) *does* wrap its logic in try/catch and swallow the error, redirecting to `${FRONTEND_URL}/knowledge-base?gmail=error` instead of letting it hit `errorHandler`. This route is hit by the user's browser navigating via Google's redirect, not by the SPA's axios client — a JSON `{ success: false, ... }` response would just render as raw text in the browser instead of taking the user back into the app. This is the only controller allowed to catch-and-redirect instead of throw; every other route should still throw and let `errorHandler` do its job.
 
 ## Response envelope
 
@@ -98,6 +102,19 @@ Validation happens in the **route**, as middleware — not inside the controller
   - Both paths converge on the same shape before reaching the service: a file already saved to disk. `multer`'s `diskStorage` (see `embedding-routes.ts`) writes an uploaded file straight to `UPLOADS_DIR` and the controller just forwards `req.file.path`; for the text path, the controller calls `saveTextToDisk(text)` (`src/utils/save-text-to-disk.ts`) itself to write the text out the same way. `EmbeddingService.ingest()` never *writes* to the filesystem (no `mkdir`/`writeFile`) — it only ever receives a `filePath` that's guaranteed to already exist, then reads it back with `readFile`.
 - **When adding a new endpoint**: write its zod schema + exported `<Thing>Dto` type in `src/dtos/`, wire `validateBody`/`validateParams`/`validateQuery` into the route, then read `req.body`/`req.params`/`req.query` in the controller with the DTO cast. Don't reintroduce manual `typeof x !== "string"` checks, don't call `isValidObjectId` ad hoc outside a schema, and don't call `validate(...)` directly from a controller.
 
+## Gmail MCP integration
+
+Lets each app user connect their own Gmail account (OAuth2), then exposes Gmail as a **real MCP (Model Context Protocol)** server — not just a direct Gmail API wrapper — so agent/tool-calling code can call Gmail tools per-user. Scope requested at consent: read + send (`appConfig.gmail.scopes`).
+
+**Why a custom MCP server, not an off-the-shelf package**: existing Gmail MCP server packages (e.g. `@gongrzhe/server-gmail-mcp`) are built for one local desktop user authenticating via an interactive browser popup, with credentials in a single shared file (`~/.gmail-mcp/credentials.json`). That doesn't fit a multi-tenant backend where many different end-users each connect their own Gmail via a web OAuth flow, non-interactively, on the backend's behalf. `src/services/gmail-mcp-server.ts` is a small, fully-owned MCP server instead — three tools (`search_emails`, `read_email`, `send_email`) backed by `googleapis`' Gmail client.
+
+- **OAuth flow** (`gmail-oauth-service.ts`, `GmailOAuthService`): `getAuthUrl(userId)` builds the Google consent URL, with a **signed JWT as the `state` param** (`{ userId }`, signed with the existing `JWT_SECRET`, `appConfig.gmail.oauthStateExpiresIn` = 10 minutes) — this is what lets the unauthenticated callback route recover which user the connection belongs to, since Google's redirect carries no session/JWT of ours. `prompt: "consent"` is always forced, because Google only issues a `refresh_token` on a account's *first* consent otherwise — without forcing re-consent, a user reconnecting after disconnecting would silently get no refresh token. `handleCallback(code, state)` verifies the state, exchanges the code, fetches the connected account's email (Google's `oauth2.userinfo.get`), and upserts a `GmailConnection`.
+- **Storage** (`models/gmail-connection.ts`, `GmailConnectionRepository`): one `GmailConnection` document per `userId` (unique index), `accessToken`/`refreshToken` **encrypted at rest** via `src/utils/token-crypto.ts` (AES-256-GCM, key from `TOKEN_ENCRYPTION_KEY`) — never store OAuth tokens in plaintext. `updateTokens(userId, accessToken, expiryDate)` is a lightweight partial update, separate from the full `upsert`, used when `googleapis` silently refreshes an expired access token mid-request.
+- **MCP server** (`gmail-mcp-server.ts`, `createGmailMcpServer(gmail)`): takes an already-authenticated `gmail_v1.Gmail` client and returns an `McpServer` (`@modelcontextprotocol/sdk/server/mcp.js`) with three `registerTool`-registered tools. MIME parsing (`extractPlainTextBody`, base64url decode/encode for send) lives in `src/utils/gmail-mime.ts`, not inlined in the server file.
+- **Per-user connection** (`gmail-mcp-service.ts`, `GmailMcpService.getClient(userId)` — the actual "configure MCP" entry point): loads the user's `GmailConnection`, decrypts tokens, builds a per-user `OAuth2Client` + Gmail API client, calls `createGmailMcpServer` with it, then connects a `Client` (`@modelcontextprotocol/sdk/client/index.js`) to that server via `InMemoryTransport.createLinkedPair()` — **no subprocess, no network hop**, server and client just talk over an in-memory linked pair within the same Node process. Throws `NotFoundError` if the user hasn't connected Gmail. Agent/tool-calling code (not built here — that's a separate, later piece) calls `getClient(userId)` and then uses the returned `Client` like any other MCP client (`listTools()`, `callTool()`).
+- **Routes** (`gmail-routes.ts`, mounted at `/integrations/gmail`): `GET /connect` (behind `authMiddleware`, returns `{ authUrl }`), `GET /callback` (**not** behind `authMiddleware` — see the Error handling section's documented exception for why it also doesn't `throw`), `GET /status` (`{ connected, googleEmail? }`), `DELETE /` (disconnect — best-effort revokes the token with Google, then always deletes the local `GmailConnection` regardless of whether the revoke succeeded, so a user is never stuck "connected" from the app's own point of view even if Google's revoke call fails).
+- **Setup**: `docs/gmail-oauth-setup.md` — creating the Google Cloud OAuth client is a manual, external, one-time step; this app cannot automate it.
+
 ## Folder structure
 
 ```
@@ -127,11 +144,14 @@ src/
     message.dto.ts                    # listMessagesQuerySchema, ListMessagesQueryDto
     chat.dto.ts                       # chatSchema, ChatDto (used directly in index.ts's /chat handler)
     embedding.dto.ts                  # ingestTextSchema, IngestTextDto — used directly in EmbeddingController (see Input validation exception)
+    gmail.dto.ts                      # gmailCallbackQuerySchema, GmailCallbackQueryDto
   types/
     express.d.ts                      # module augmentation: res.success, req.userId on Express's types
   utils/
     uploads-dir.ts                    # UPLOADS_DIR, sanitizeFileName(fileName) — shared by embedding-routes.ts and save-text-to-disk.ts
     save-text-to-disk.ts               # saveTextToDisk(text, fileName?) -> filePath — the text-input equivalent of multer's diskStorage
+    token-crypto.ts                   # encryptToken/decryptToken (AES-256-GCM) — Gmail OAuth tokens at rest, key from TOKEN_ENCRYPTION_KEY
+    gmail-mime.ts                     # extractPlainTextBody(payload), buildRawMessage({to,subject,body}) — MIME parsing/building for Gmail tools
   config/
     app-config.ts                     # appConfig — every tunable non-secret constant, grouped hierarchically by feature (see Application configuration above)
   di/
@@ -142,17 +162,20 @@ src/
     user.ts                           # Mongoose schema/model: UserModel, UserDocument
     conversation.ts                    # Mongoose schema/model: ConversationModel, ConversationDocument
     summary.ts                         # Mongoose schema/model: SummaryModel, SummaryDocument (one row per conversation, upserted)
+    gmail-connection.ts                # Mongoose schema/model: GmailConnectionModel, GmailConnectionDocument (one row per user, unique userId; tokens stored encrypted)
   controllers/
     require-user-id.ts                # requireUserId(req) — reads req.userId, throws UnauthorizedError if absent
     auth-controller.ts                # AuthController — HTTP layer for /auth routes (public, no authMiddleware)
     conversation-controller.ts        # ConversationController — /conversations CRUD, behind authMiddleware
     message-controller.ts             # MessageController — GET /messages, behind authMiddleware
     embedding-controller.ts           # EmbeddingController — POST /embeddings/ingest, behind authMiddleware (file-or-text exception, see Input validation)
+    gmail-controller.ts               # GmailController — /integrations/gmail/* (connect/status/disconnect behind authMiddleware; callback is not, see Error handling)
   routes/
     auth-routes.ts                    # createAuthRouter(authController) -> Router
     conversation-routes.ts            # createConversationRouter(conversationController) -> Router
     message-routes.ts                 # createMessageRouter(messageController) -> Router
     embedding-routes.ts               # createEmbeddingRouter(embeddingController) -> Router; multer diskStorage writes straight to UPLOADS_DIR, file size limit from appConfig.uploads.maxFileSizeBytes, MulterError mapped to ValidationError
+    gmail-routes.ts                   # createGmailRouter(gmailController) -> Router, mounted at /integrations/gmail
   services/
     interfaces/
       chat-service.interface.ts       # ChatServiceInterface
@@ -162,6 +185,8 @@ src/
       message-service.interface.ts    # MessageServiceInterface, MessageSummary
       summary-service.interface.ts    # SummaryServiceInterface, SummaryRecord
       embedding-service.interface.ts  # EmbeddingServiceInterface, IngestSource — embed()/ingest() both currently stubs, not implemented yet
+      gmail-oauth-service.interface.ts  # GmailOAuthServiceInterface, GmailConnectionStatus, GmailCallbackResult
+      gmail-mcp-service.interface.ts  # GmailMcpServiceInterface — getClient(userId) -> Promise<Client> (MCP SDK's Client type)
     chat-service.ts                   # ChatService implements ChatServiceInterface
     chat-memory-service.ts             # ChatMemoryService implements ChatMemoryServiceInterface
     auth-service.ts                   # AuthService implements AuthServiceInterface (bcrypt + jwt)
@@ -169,6 +194,9 @@ src/
     message-service.ts                # MessageService implements MessageServiceInterface
     summary-service.ts                # SummaryService implements SummaryServiceInterface (LLM summarization)
     embedding-service.ts              # EmbeddingService implements EmbeddingServiceInterface — owns both embedding generation (embed(), via LangChain's OpenAIEmbeddings pointed at OpenRouter) and vector storage/search (ingest(), similaritySearch()), via LangChain's PineconeStore (@langchain/pinecone) rather than the raw Pinecone SDK. No separate VectorStoreService — kept inline here deliberately, as a quick/pragmatic choice rather than introducing another layer.
+    gmail-oauth-service.ts            # GmailOAuthService implements GmailOAuthServiceInterface — the OAuth2 flow (see Gmail MCP integration below)
+    gmail-mcp-server.ts               # createGmailMcpServer(gmail) -> McpServer — the actual MCP tool definitions (search_emails, read_email, send_email); not a class/DI-registered service, just a factory function
+    gmail-mcp-service.ts              # GmailMcpService implements GmailMcpServiceInterface — per-user MCP Client via InMemoryTransport (see Gmail MCP integration below)
     model-provider.ts                 # ModelProvider (static ChatOpenRouter cache/factory)
     db.ts                             # connectToDatabase() — cached Mongoose connection
   repositories/
@@ -177,10 +205,12 @@ src/
       user-repository.interface.ts    # UserRepositoryInterface
       conversation-repository.interface.ts  # ConversationRepositoryInterface, CreateConversationInput
       summary-repository.interface.ts # SummaryRepositoryInterface, UpsertSummaryInput
+      gmail-connection-repository.interface.ts  # GmailConnectionRepositoryInterface, UpsertGmailConnectionInput
     message-repository.ts             # MessageRepository implements MessageRepositoryInterface
     user-repository.ts                # UserRepository implements UserRepositoryInterface
     conversation-repository.ts         # ConversationRepository implements ConversationRepositoryInterface
     summary-repository.ts             # SummaryRepository implements SummaryRepositoryInterface
+    gmail-connection-repository.ts    # GmailConnectionRepository implements GmailConnectionRepositoryInterface
 ```
 
 **Naming history** (matters if old code/docs/branches reference former names): the persisted `userId` + `name` conversation entity's model/repository/service were briefly named `ChatConversation*` because the plain `Conversation*` name was, at the time, taken by the LLM message-history load/append logic used by `ChatService`. That logic was renamed `ChatMemoryService`/`ChatMemoryServiceInterface` (clearer: it's the LLM-memory layer, not conversation CRUD) specifically to free up `Conversation*` for the entity, which was then renamed back from `ChatConversation*` to the current `Conversation*`. The HTTP-facing `ConversationController`/`conversation-routes.ts` names never changed — they were never in conflict with either.
