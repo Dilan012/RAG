@@ -1,0 +1,16 @@
+services:
+  backend:
+    build:
+      context: .
+    env_file:
+      - ./.env
+    environment:
+      - PORT=5090
+    ports:
+      - "5090:5090"
+    volumes:
+      - uploads:/app/uploads
+    restart: unless-stopped
+
+volumes:
+  uploads:
