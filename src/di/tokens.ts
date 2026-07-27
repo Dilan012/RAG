@@ -4,6 +4,7 @@ export const TOKENS = {
   ConversationRepository: Symbol.for("ConversationRepositoryInterface"),
   SummaryRepository: Symbol.for("SummaryRepositoryInterface"),
   GmailConnectionRepository: Symbol.for("GmailConnectionRepositoryInterface"),
+  KnowledgeBaseDocumentRepository: Symbol.for("KnowledgeBaseDocumentRepositoryInterface"),
   ChatMemoryService: Symbol.for("ChatMemoryServiceInterface"),
   AuthService: Symbol.for("AuthServiceInterface"),
   ConversationService: Symbol.for("ConversationServiceInterface"),

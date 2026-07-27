@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { inject, injectable } from "tsyringe";
 import { Pinecone } from "@pinecone-database/pinecone";
 import { PineconeStore } from "@langchain/pinecone";
@@ -9,8 +9,11 @@ import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import type {
   EmbeddingServiceInterface,
   IngestSource,
+  KnowledgeBaseDocumentSummary,
   SimilaritySearchResult,
 } from "./interfaces/embedding-service.interface.js";
+import type { KnowledgeBaseDocumentRepositoryInterface } from "../repositories/interfaces/knowledge-base-document-repository.interface.js";
+import type { KnowledgeBaseDocumentDocument } from "../models/knowledge-base-document.js";
 import { TOKENS } from "../di/tokens.js";
 import { appConfig } from "../config/app-config.js";
 
@@ -24,6 +27,18 @@ async function extractText(source: IngestSource): Promise<string> {
   return readFile(source.filePath, "utf-8");
 }
 
+function toSummary(document: KnowledgeBaseDocumentDocument): KnowledgeBaseDocumentSummary {
+  return {
+    id: document._id.toString(),
+    fileName: document.fileName,
+    mimeType: document.mimeType,
+    source: document.source,
+    sizeBytes: document.sizeBytes,
+    chunkCount: document.chunkCount,
+    createdAt: document.createdAt,
+  };
+}
+
 @injectable()
 export class EmbeddingService implements EmbeddingServiceInterface {
   private readonly embeddings: OpenAIEmbeddings;
@@ -34,7 +49,9 @@ export class EmbeddingService implements EmbeddingServiceInterface {
   constructor(
     @inject(TOKENS.PineconeApiKey) pineconeApiKey: string,
     @inject(TOKENS.PineconeIndexName) pineconeIndexName: string,
-    @inject(TOKENS.OpenRouterApiKey) openRouterApiKey: string
+    @inject(TOKENS.OpenRouterApiKey) openRouterApiKey: string,
+    @inject(TOKENS.KnowledgeBaseDocumentRepository)
+    private readonly knowledgeBaseDocumentRepository: KnowledgeBaseDocumentRepositoryInterface
   ) {
     // OpenRouter exposes an OpenAI-compatible /embeddings endpoint, so OpenAIEmbeddings
     // works unmodified — just pointed at OpenRouter's base URL with an OpenRouter key.
@@ -53,25 +70,38 @@ export class EmbeddingService implements EmbeddingServiceInterface {
     return this.embeddings.embedQuery(text);
   }
 
-  async ingest(source: IngestSource): Promise<void> {
+  async ingest(source: IngestSource): Promise<KnowledgeBaseDocumentSummary> {
     const text = await extractText(source);
+    const { size: sizeBytes } = await stat(source.filePath);
 
     const splitter = new RecursiveCharacterTextSplitter({
       chunkSize: appConfig.embedding.chunkSize,
       chunkOverlap: appConfig.embedding.chunkOverlap,
     });
     const chunks = await splitter.splitText(text);
-    
+
     const documents = chunks.map((chunk) => ({
       pageContent: chunk,
       metadata: { userId: source.userId, fileName: source.fileName },
     }));
     const ids = chunks.map(() => randomUUID());
-    
+
     const vectorStore = await this.vectorStore;
     await vectorStore.addDocuments(documents, { ids });
 
     console.log(`Ingested ${source.fileName}: stored ${chunks.length} chunk(s) in Pinecone`);
+
+    const document = await this.knowledgeBaseDocumentRepository.create({
+      userId: source.userId,
+      fileName: source.fileName,
+      filePath: source.filePath,
+      mimeType: source.mimeType,
+      source: source.source,
+      sizeBytes,
+      chunkCount: chunks.length,
+    });
+
+    return toSummary(document);
   }
 
   async similaritySearch(
@@ -92,5 +122,10 @@ export class EmbeddingService implements EmbeddingServiceInterface {
       score,
       metadata: doc.metadata ?? {},
     }));
+  }
+
+  async listDocuments(userId: string): Promise<KnowledgeBaseDocumentSummary[]> {
+    const documents = await this.knowledgeBaseDocumentRepository.findByUserId(userId);
+    return documents.map(toSummary);
   }
 }

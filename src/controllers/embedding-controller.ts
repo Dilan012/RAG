@@ -11,17 +11,24 @@ import { saveTextToDisk } from "../utils/save-text-to-disk.js";
 export class EmbeddingController {
   constructor(@inject(TOKENS.EmbeddingService) private readonly embeddingService: EmbeddingServiceInterface) {}
 
+  list = async (req: Request, res: Response): Promise<void> => {
+    const userId = requireUserId(req);
+    const documents = await this.embeddingService.listDocuments(userId);
+    res.success(documents);
+  };
+
   ingest = async (req: Request, res: Response): Promise<void> => {
     const userId = requireUserId(req);
 
     if (req.file) {
-      await this.embeddingService.ingest({
+      const document = await this.embeddingService.ingest({
         filePath: req.file.path,
         fileName: req.file.originalname,
         mimeType: req.file.mimetype,
         userId,
+        source: "file",
       });
-      res.success({ ingested: true }, 201);
+      res.success(document, 201);
       return;
     }
 
@@ -30,12 +37,13 @@ export class EmbeddingController {
     const { text } = validate(ingestTextSchema, req.body);
     const filePath = await saveTextToDisk(text);
 
-    await this.embeddingService.ingest({
+    const document = await this.embeddingService.ingest({
       filePath,
       fileName: "text-input.txt",
       mimeType: "text/plain",
       userId,
+      source: "text",
     });
-    res.success({ ingested: true }, 201);
+    res.success(document, 201);
   };
 }

@@ -6,6 +6,7 @@ import { UserRepository } from "../repositories/user-repository.js";
 import { ConversationRepository } from "../repositories/conversation-repository.js";
 import { SummaryRepository } from "../repositories/summary-repository.js";
 import { GmailConnectionRepository } from "../repositories/gmail-connection-repository.js";
+import { KnowledgeBaseDocumentRepository } from "../repositories/knowledge-base-document-repository.js";
 import { ChatMemoryService } from "../services/chat-memory-service.js";
 import { AuthService } from "../services/auth-service.js";
 import { ConversationService } from "../services/conversation-service.js";
@@ -30,6 +31,7 @@ export function configureContainer(): void {
   container.register(TOKENS.ConversationRepository, { useClass: ConversationRepository });
   container.register(TOKENS.SummaryRepository, { useClass: SummaryRepository });
   container.register(TOKENS.GmailConnectionRepository, { useClass: GmailConnectionRepository });
+  container.register(TOKENS.KnowledgeBaseDocumentRepository, { useClass: KnowledgeBaseDocumentRepository });
   container.register(TOKENS.ChatMemoryService, { useClass: ChatMemoryService });
   container.register(TOKENS.AuthService, { useClass: AuthService });
   container.register(TOKENS.ConversationService, { useClass: ConversationService });

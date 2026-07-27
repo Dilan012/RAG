@@ -45,6 +45,8 @@ function handleFileUpload(req: Request, res: Response, next: NextFunction): void
 export function createEmbeddingRouter(controller: EmbeddingController, authMiddleware: RequestHandler): Router {
   const router = Router();
 
+  router.get("/", authMiddleware, controller.list);
+
   // Accepts either multipart/form-data with a "file" field, or a JSON body with a "text"
   // field — see EmbeddingController.ingest for the either/or handling. multer only acts on
   // multipart requests; a JSON request passes through untouched (express.json() already
