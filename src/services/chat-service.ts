@@ -15,12 +15,17 @@ export class ChatService implements ChatServiceInterface {
     @inject(TOKENS.EmbeddingService) private readonly embeddingService: EmbeddingServiceInterface
   ) {}
 
-  async chat(
+  // Persists the user's message before streaming starts (rather than after, like the
+  // old invoke()-based chat() used to) — with a streaming response there's no single
+  // "success" point to hang that write off of, so it happens as soon as the turn is
+  // going ahead. The assistant's reply is only persisted once the model has finished
+  // streaming, from the full accumulated text — never partial content.
+  async *chatStream(
     userId: string,
     userMessage: string,
     conversationId?: string,
     systemPrompt?: string
-  ): Promise<string> {
+  ): AsyncGenerator<string> {
     const model = ModelProvider.getModel(this.modelName);
     const history = await this.conversationStore.getHistory(userId, conversationId);
 
@@ -39,18 +44,22 @@ export class ChatService implements ChatServiceInterface {
     }
     messages.push({ role: "user", content: userMessage });
 
-    const response = await model.invoke(messages);
-
-    const replyContent = String(response.content);
-
     await this.conversationStore.appendMessage(userId, { role: "user", content: userMessage }, conversationId);
+
+    const stream = await model.stream(messages);
+    let fullReply = "";
+    for await (const chunk of stream) {
+      const piece = String(chunk.content);
+      if (!piece) continue;
+      fullReply += piece;
+      yield piece;
+    }
+
     await this.conversationStore.appendMessage(
       userId,
-      { role: "assistant", content: replyContent },
+      { role: "assistant", content: fullReply },
       conversationId
     );
-
-    return replyContent;
   }
 
   private async buildKnowledgeBaseContext(userId: string, query: string): Promise<string | null> {

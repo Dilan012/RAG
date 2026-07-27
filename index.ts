@@ -55,12 +55,44 @@ api.use("/messages", createMessageRouter(messageController, authMiddleware));
 api.use("/embeddings", createEmbeddingRouter(embeddingController, authMiddleware));
 api.use("/integrations/gmail", createGmailRouter(gmailController, authMiddleware));
 
+// Streams the reply as raw text chunks instead of the usual { success, data } JSON
+// envelope — there's no single point to attach a JSON response to once the model
+// starts streaming tokens. This is the one route allowed to bypass res.success for
+// that reason (see CLAUDE.md's Response envelope section).
 api.post("/chat", authMiddleware, validateBody(chatSchema), async (req: Request, res: Response) => {
   const userId = requireUserId(req);
   const { message, conversationId } = req.body as ChatDto;
 
-  const reply = await chatService.chat(userId, message, conversationId);
-  res.success({ reply });
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
+  // Tell any reverse proxy in front of this (nginx, etc.) not to buffer the whole
+  // response before forwarding it — proxy_buffering defaults to "on" in nginx, which
+  // silently turns this into a fake stream (nothing reaches the client until the model
+  // finishes) even though this handler itself is writing incrementally.
+  res.setHeader("X-Accel-Buffering", "no");
+  // Node doesn't disable Nagle's algorithm on response sockets by default, which can
+  // coalesce/delay the small, frequent writes a token-by-token stream produces —
+  // flushing headers immediately and disabling Nagle here is what actually gets each
+  // chunk onto the wire as soon as res.write() is called, instead of batched later.
+  res.flushHeaders();
+  req.socket.setNoDelay(true);
+
+  try {
+    for await (const chunk of chatService.chatStream(userId, message, conversationId)) {
+      res.write(chunk);
+    }
+    res.end();
+  } catch (error) {
+    console.error("Chat stream failed:", error);
+    if (!res.headersSent) {
+      throw error;
+    }
+    // Headers/chunks are already on the wire, so a normal JSON error response isn't
+    // possible anymore — end the stream with a sentinel the frontend strips out and
+    // treats as a failure instead of silently truncating the reply.
+    res.write(appConfig.chat.streamErrorSentinel);
+    res.end();
+  }
 });
 
 app.use(appConfig.server.apiPrefix, api);
