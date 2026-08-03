@@ -95,6 +95,19 @@ api.post("/chat", authMiddleware, validateBody(chatSchema), async (req: Request,
   }
 });
 
+// Same turn as POST /chat above, just not streamed — a single { success, data: { reply } }
+// response once the model is done. Exists for experimentation/testing where a plain
+// request/response is more convenient than consuming a stream (e.g. curl, Postman, quick
+// prompt iteration) — ChatService.chat() itself just drains chatStream() internally, so
+// there's no separate "non-streaming turn" implementation to keep in sync.
+api.post("/chat/invoke", authMiddleware, validateBody(chatSchema), async (req: Request, res: Response) => {
+  const userId = requireUserId(req);
+  const { message, conversationId } = req.body as ChatDto;
+
+  const reply = await chatService.chat(userId, message, conversationId);
+  res.success({ reply });
+});
+
 app.use(appConfig.server.apiPrefix, api);
 
 app.use(errorHandler);

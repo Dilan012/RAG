@@ -62,6 +62,46 @@ export class ChatService implements ChatServiceInterface {
     );
   }
 
+  // A standalone, non-streaming implementation (model.invoke() instead of chatStream())
+  // rather than draining the stream internally — kept independent on purpose so it can
+  // be modified/tested on its own without touching the streaming path.
+  async chat(
+    userId: string,
+    userMessage: string,
+    conversationId?: string,
+    systemPrompt?: string
+  ): Promise<string> {
+    const model = ModelProvider.getModel(this.modelName);
+    const history = await this.conversationStore.getHistory(userId, conversationId);
+
+    const messages: BaseMessageLike[] = [{ role: "system", content: appConfig.chat.baseSystemPrompt }];
+    if (systemPrompt) {
+      messages.push({ role: "system", content: systemPrompt });
+    }
+
+    const knowledgeBaseContext = await this.buildKnowledgeBaseContext(userId, userMessage);
+    if (knowledgeBaseContext) {
+      messages.push({ role: "system", content: knowledgeBaseContext });
+    }
+
+    for (const message of history) {
+      messages.push({ role: message.role, content: message.content });
+    }
+    messages.push({ role: "user", content: userMessage });
+
+    const response = await model.invoke(messages);
+    const replyContent = String(response.content);
+
+    await this.conversationStore.appendMessage(userId, { role: "user", content: userMessage }, conversationId);
+    await this.conversationStore.appendMessage(
+      userId,
+      { role: "assistant", content: replyContent },
+      conversationId
+    );
+
+    return replyContent;
+  }
+
   private async buildKnowledgeBaseContext(userId: string, query: string): Promise<string | null> {
     const results = await this.embeddingService.similaritySearch(userId, query);
     if (results.length === 0) {
