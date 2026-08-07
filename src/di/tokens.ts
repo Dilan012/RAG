@@ -23,4 +23,5 @@ export const TOKENS = {
   GoogleRedirectUri: Symbol.for("GoogleRedirectUri"),
   TokenEncryptionKey: Symbol.for("TokenEncryptionKey"),
   FrontendUrl: Symbol.for("FrontendUrl"),
+  TavilyApiKey: Symbol.for("TavilyApiKey"),
 } as const;

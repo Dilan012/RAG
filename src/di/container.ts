@@ -52,6 +52,7 @@ export function configureContainer(): void {
   container.register(TOKENS.GoogleRedirectUri, { useValue: requireEnv("GOOGLE_REDIRECT_URI") });
   container.register(TOKENS.TokenEncryptionKey, { useValue: requireEnv("TOKEN_ENCRYPTION_KEY") });
   container.register(TOKENS.FrontendUrl, { useValue: process.env.FRONTEND_URL ?? "http://localhost:5173" });
+  container.register(TOKENS.TavilyApiKey, { useValue: requireEnv("TAVILY_API_KEY") });
 }
 
 export { container };
